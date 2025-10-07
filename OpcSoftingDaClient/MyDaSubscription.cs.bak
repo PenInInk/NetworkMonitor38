@@ -1,0 +1,163 @@
+using System;
+using System.Collections;
+using Softing.OPCToolbox.Client;
+using Softing.OPCToolbox;
+using System.Threading;
+using log4net;
+
+namespace OpcSoftingDaClient
+{
+	public class MyDaSubscription : DaSubscription 
+	{
+        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
+        #region Constructor
+
+        public MyDaSubscription(uint updateRate, MyDaSession parentSession) : base (updateRate, parentSession)
+		{
+			DataChanged += new DataChangedEventHandler(HandleDataChanged);
+			StateChangeCompleted += new StateChangeEventHandler(HandleStateChanged);
+			ReadCompleted += new SubscriptionReadEventHandler(HandleSubscriptionReadCompleted);
+			WriteCompleted += new SubscriptionWriteEventHandler(HandleSubscriptionWriteCompleted);
+			PerformStateTransitionCompleted += new PerformStateTransitionEventHandler(HandlePerformStateTransition);
+		}
+
+        #endregion
+
+        #region Private Members
+        //---------------------
+
+        #region Private Attributes
+        //------------------------
+
+
+        //--
+        #endregion
+
+        #endregion
+
+        #region Public Methods
+        //---------------------
+
+
+        //--
+        #endregion
+
+        #region Public Properties
+
+		#endregion
+
+		#region Handles
+
+		public static void HandleStateChanged(ObjectSpaceElement sender, EnumObjectState state)
+		{
+            log.Info(sender + " State Changed - " + state);
+            OpcClient.ConnectionStateChanged(state);
+		}
+
+		public static void HandleDataChanged(
+			DaSubscription daSubscription, 
+			DaItem[] items, 
+			ValueQT[] values, 
+			int[] results)
+		{	
+			for (int i = 0; i < items.Length; i++)
+			{
+				if(ResultCode.SUCCEEDED(results[i]))
+				{	
+					if (log.IsDebugEnabled) log.Debug( String.Format("{0,-19} {1} {2,-50} ",items[i].Id,"-", values[i].ToString()));					
+				}
+				else
+				{
+					log.Info("Receiving item value failed! " + " Item: " + items[i].Id );
+				}
+			}
+		}
+
+		public static void HandleSubscriptionReadCompleted(
+			DaSubscription daSubscription, 
+			uint executionContext, 
+			DaItem[] items, 
+			ValueQT[] values,
+			int[] results,
+			int result)
+		{
+			if(ResultCode.SUCCEEDED(result))
+			{
+				if (log.IsDebugEnabled) log.Debug(daSubscription + " asynchronous read succeeded! ");
+                lock (OpcClient.ValuesReceivedFromServer)
+                {
+                    for (int i = 0; i < items.Length; i++)
+                    {
+                        if (ResultCode.SUCCEEDED(results[i]))
+                        {
+                            if (OpcClient.ValuesReceivedFromServer.ContainsKey(items[i].Id))
+                            {
+                                OpcClient.ValuesReceivedFromServer[items[i].Id] = values[i];
+                            }
+                            else
+                            {
+                                OpcClient.ValuesReceivedFromServer.Add(items[i].Id, values[i]);
+                            }
+                            if (log.IsDebugEnabled) log.Debug(String.Format("{0,-19} {1} {2,-50} ", items[i], "-", values[i].ToString()));
+                        }
+                        else
+                        {
+                            log.Error(" Session asynchronous read failed for item " + " Item: " + items[i] + " [ResultID: " + Enum.GetName(typeof(EnumResultCode), results[i]) + " ]");
+                        }
+                    }
+                }
+            }
+			else
+			{
+				log.Error(" Subscription asynchronous read failed! Result: " + result);
+			}
+		}
+
+		public static void HandleSubscriptionWriteCompleted(
+			DaSubscription daSubscription, 
+			uint executionContext,
+			DaItem[] items,
+			ValueQT[] values,
+			int[] results,
+			int result)
+		{
+			if(ResultCode.SUCCEEDED(result))
+			{
+				if (log.IsDebugEnabled) log.Debug(daSubscription + " asynchronous write succeeded! ");
+				for(int i = 0 ; i< items.Length; i++)
+				{
+					if (ResultCode.SUCCEEDED(results[i]))
+					{
+						if (log.IsDebugEnabled) log.Debug(" " + items[i].Id );
+					}
+					else
+					{
+    					log.Error(" aSubscription asynchronous write failed! " + items[i].Id + " [ResultID: " + results[i] + " ]");
+					}		
+				}
+			}
+			else
+			{
+				log.Error(" Subscription asynchronous write failed! Result: " + result);
+			}
+		}
+
+		public static void HandlePerformStateTransition(
+			ObjectSpaceElement sender, 
+			uint executionContext, 
+			int result)
+		{			
+			if(ResultCode.SUCCEEDED(result))
+			{
+				if (log.IsDebugEnabled) log.Debug( sender + " Performed state transition - "  + executionContext );
+			}
+			else
+			{
+				log.Error(sender + "  Performed state transition failed! Result: " + result);
+			}
+		}
+		#endregion
+	}
+
+}
