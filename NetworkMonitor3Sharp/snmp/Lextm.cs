@@ -316,7 +316,7 @@ namespace NetworkMonitor.snmp
             }
             return true;
         }
-        private static IList<Variable> V3GetBulkRequest(aDevice device, IList<Variable> oid)
+        public static IList<Variable> V3GetBulkRequest(aDevice device, IList<Variable> oid)
         {
             string logname = $"V3GetBulkRequest {device.myIpEndpoint}";
             if (log.IsDebugEnabled)

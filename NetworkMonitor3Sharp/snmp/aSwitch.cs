@@ -38,6 +38,8 @@ public class aSwitch : aDevice
 
     private const string strSensorValues = ".1.3.6.1.2.1.99.1.1.1.4";
 
+
+
     public ObjectIdentifier oidSensorValues;
 
     private List<Variable> myRingStatus = new List<Variable>();
@@ -73,6 +75,7 @@ public class aSwitch : aDevice
             case Enterprise.Moxa:
                 oidSensorValues = new ObjectIdentifier(".1.3.6.1.2.1.99.1.1.1.4");
                 mySensorValues.Add(new Variable(oidSensorValues));
+
                 break;
             default:
                 if (log.IsDebugEnabled)
@@ -88,10 +91,19 @@ public class aSwitch : aDevice
     {
     }
 
+    public override string ToString()
+    {
+        return base.myIpEndpoint.Address.ToString();
+    }
     public override bool Poll()
     {
         ScanRingStatus();
         ScanSensorValues();
+        if (this.enterprise == Enterprise.Moxa)
+        {
+            //ScanVRRPStatus();
+            GetVrrpBulkStatus();
+        }
         if (ScanPorts())
         {
             GUI.TagConnection.UpdatePortTags(ref hostdevice);
@@ -261,7 +273,7 @@ public class aSwitch : aDevice
         {
             foreach (Variable item in received)
             {
-                if (log.IsDebugEnabled) log.Debug($"{this}: {nameof(handlePortStatus)}: oid={item.Id}, data={item.Data}");
+                //if (log.IsDebugEnabled) log.Debug($"{this}: {nameof(handlePortStatus)}: oid={item.Id}, data={item.Data}");
                 ifStatus aPortStatus = null;
                 aPortStatus = new ifStatus(item, enterprise);
                 if (log.IsDebugEnabled) log.Debug($"{this}: {nameof(handlePortStatus)}: {aPortStatus}");
@@ -280,7 +292,7 @@ public class aSwitch : aDevice
         {
             if (physicalPort.portStatus != 0)
             {
-                if (log.IsDebugEnabled) log.Debug($"{this}: {nameof(handlePortStatus)}: {physicalPort}");
+                //if (log.IsDebugEnabled) log.Debug($"{this}: {nameof(handlePortStatus)}: {physicalPort}");
 
                 if (portStatusType == typeof(ifOperStatus))
                 {
@@ -600,5 +612,219 @@ public class aSwitch : aDevice
             }
         }
         return false;
+    }
+
+    public bool ScanVRRPStatus()
+    {
+        if (hostdevice == null)
+        {
+            return false;
+        }
+        if (enterprise != Enterprise.Moxa)
+        {
+            return false;
+        }
+        List<Variable> vList = new List<Variable>();
+        if (!hostdevice.vrrpStatus.IsInitialized())
+        {
+            vList.Add(new Variable(vrrpStatus.moxaFirmwareVersion));
+            vList.Add(new Variable(vrrpStatus.moxaSwitchModel));
+            vList.Add(new Variable(vrrpStatus.moxaVrrpEnable));
+            vList.Add(new Variable(vrrpStatus.moxaVrrpStatus));
+        }
+        else
+        {
+            vList.Add(new Variable(vrrpStatus.moxaVrrpEnable));
+            vList.Add(new Variable(vrrpStatus.moxaVrrpStatus));
+        }
+        ISnmpMessage response = null;
+        try
+        {
+            GetBulkRequestMessage msgScanUps = null;
+            if (version == VersionCode.V2)
+            {
+                msgScanUps = new GetBulkRequestMessage(Messenger.NextMessageId, VersionCode.V2, hostdevice.snmpvalues.CommunityString, vList.Count, 1, vList);
+            }
+            else if (version == VersionCode.V3)
+            {
+                ReportMessage report = null;
+                report = snmpV3User.GetDiscoveryResponseMessage(SnmpType.GetRequestPdu);
+                msgScanUps = new GetBulkRequestMessage(VersionCode.V3, Messenger.NextMessageId, Messenger.NextRequestId, snmpV3User.username, snmpV3User.ContextName, vList.Count, 1, vList, snmpV3User.privacy, Messenger.MaxMessageSize, report);
+            }
+            response = msgScanUps.GetResponse(configuration.snmpTimeOutMs, myIpEndpoint);
+        }
+        catch (Lextm.SharpSnmpLib.Messaging.TimeoutException)
+        {
+            return false;
+        }
+        catch (Exception ex)
+        {
+            if (log.IsInfoEnabled)
+            {
+                log.Info("Error occurred while scanning VRRP status: " + ex.Message);
+            }
+        }
+        int errorStatus = response.Pdu().ErrorStatus.ToInt32();
+        if (errorStatus != 0)
+        {
+            log.Error($"{nameof(ScanVRRPStatus)} GetResponse {Enum.GetName(typeof(Lextm.SharpSnmpLib.ErrorCode), errorStatus)}");
+            return false;
+        }
+        if (log.IsDebugEnabled) log.Debug($"{nameof(ScanVRRPStatus)} received {response.Pdu().Variables.Count} Variables");
+        foreach (Variable v in response.Pdu().Variables)
+        {
+            ProcessVrrpStatus(v);
+        }
+        return true;
+    }
+
+    public bool GetVrrpBulkStatus()
+    {
+        IList<Variable> result = sharpsnmplib.V3GetBulkRequest(this, new List<Variable> { new Variable(vrrpStatus.moxaVrrpTree) });
+        if (result == null)
+        {
+            if (log.IsDebugEnabled)
+                log.Debug($"{ToString()} {nameof(GetVrrpBulkStatus)} no result returned");
+            return false;
+        }
+        if (result.Count == 0)
+        {
+            if (log.IsDebugEnabled)
+                log.Debug($"{ToString()} {nameof(GetVrrpBulkStatus)} no values available");
+            return false;
+        }
+        if (log.IsDebugEnabled)
+            log.Debug($"{ToString()} {nameof(GetVrrpBulkStatus)} returned {result.Count} values");
+        foreach (Variable v in result)
+        {
+            ProcessVrrpStatus(v);
+        }
+        return true;
+    }
+    private void ProcessVrrpStatus(Variable v)
+    {
+        if (log.IsDebugEnabled)
+        {
+            log.Debug($"{ToString()} {v.Id?.ToString()} {(object)v.Data}");
+        }
+        if (!v.Id.ToString().StartsWith("1.3.6.1.4.1.8691.6.100.1.16.1.1.1"))
+        {
+            hostdevice.vrrpStatus.NotAvailable = true;
+            log.Warn($"{hostdevice} VRRP Status not available");
+            return;
+        }
+
+        if (v.Id.ToString().StartsWith(vrrpStatus.moxaFirmwareVersion.ToString()))
+        {
+            log.Info($"{ToString()} FirmwareVersion = {v.Data.ToString()}");
+        }
+        else if (v.Id == vrrpStatus.moxaSwitchModel)
+        {
+            log.Info($"Model = {v.Data.ToString()}");
+        }
+        else if (v.Id.ToString().StartsWith(vrrpStatus.moxaVrrpEnable.ToString()))
+        {
+            if (v.Data.TypeCode == SnmpType.NoSuchInstance || v.Data.TypeCode == SnmpType.NoSuchObject)
+            {
+                hostdevice.vrrpStatus.NotAvailable = true;
+            }
+            else
+            {
+                hostdevice.vrrpStatus.Available = true;
+
+                if (v.Data.TypeCode == SnmpType.Gauge32)
+                {
+                    log.Warn($"{hostdevice} VRRP Enable has wrong type {v.Data.TypeCode}");
+                }
+                int iEnable = 0;
+                if (int.TryParse(v.Data.ToString(), out iEnable))
+                {
+                    switch (iEnable)
+                    {
+                        case 1:
+                            hostdevice.vrrpStatus.Enabled = true;
+                            hostdevice.vrrpStatus.Disabled = false;
+                            break;
+                        case 2:
+                            hostdevice.vrrpStatus.Enabled = false;
+                            hostdevice.vrrpStatus.Disabled = true;
+                            break;
+                        default:
+                            hostdevice.vrrpStatus.Enabled = false;
+                            hostdevice.vrrpStatus.Disabled = false;
+                            break;
+                    }
+                }
+            }
+        }
+        else if (v.Id == vrrpStatus.moxaVrrpStatus)
+        {
+            if (v.Data.TypeCode == SnmpType.NoSuchInstance || v.Data.TypeCode == SnmpType.NoSuchObject)
+            {
+                hostdevice.vrrpStatus.NotAvailable = true;
+                log.Warn($"{hostdevice} VRRP Status not available");
+                return;
+            }
+            else
+            {
+                hostdevice.vrrpStatus.Available = true;
+                if (v.Data.TypeCode == SnmpType.Gauge32)
+                {
+                    log.Warn($"{hostdevice} VRRP Status has wrong type {v.Data.TypeCode}");
+                }
+                UInt32 iStatus = 0;
+                if (!(UInt32.TryParse(v.Data.ToString(), out iStatus)))
+                {
+                    log.Error($"{ToString()} {nameof(ProcessVrrpStatus)}: {v.Id} = {v.Data.ToString()}");
+                }
+                else
+                {
+                    if (log.IsDebugEnabled)
+                    {
+                        log.Debug($"{ToString()} {nameof(ProcessVrrpStatus)}: VRRP Status = {iStatus}");
+                    }
+                    // 0=init, 1=backup, 2=master
+                    switch (iStatus)
+                    {
+                        case 0:
+                            if (hostdevice.vrrpStatus.Master || hostdevice.vrrpStatus.Backup)
+                            {
+                                log.Info($"{ToString()} VRRP status changed to init or unknown");
+                            }
+                            hostdevice.vrrpStatus.Master = false;
+                            hostdevice.vrrpStatus.Backup = false;
+                            break;
+                        case 1:
+                            if (hostdevice.vrrpStatus.Backup == false)
+                            {
+                                log.Info($"{ToString()} VRRP status changed to Backup");
+                            }
+                            hostdevice.vrrpStatus.Master = false;
+                            hostdevice.vrrpStatus.Backup = true;
+                            break;
+                        case 2:
+                            if (hostdevice.vrrpStatus.Master == false)
+                            {
+                                log.Info($"{ToString()} VRRP status changed to Master");
+                            }
+                            hostdevice.vrrpStatus.Master = true;
+                            hostdevice.vrrpStatus.Backup = false;
+                            break;
+                        default:
+                            if (hostdevice.vrrpStatus.Master || hostdevice.vrrpStatus.Backup)
+                            {
+                                log.Info($"{ToString()} VRRP status changed to unknown value {iStatus}");
+                            }
+                            hostdevice.vrrpStatus.Master = false;
+                            hostdevice.vrrpStatus.Backup = false;
+                            break;
+                    }
+                }
+            }
+        }
+        else
+        {
+            //log.Error($"{ToString()} {nameof(ProcessVrrpStatus)} {v.Id} = {v.Data.ToString()}");
+        }
     }
 }
