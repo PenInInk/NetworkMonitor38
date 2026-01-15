@@ -101,9 +101,12 @@ public class aSwitch : aDevice
         ScanSensorValues();
         if (this.enterprise == Enterprise.Moxa)
         {
-            //ScanVRRPStatus();
-            GetVrrpBulkStatus();
-        }
+            if (this.version == VersionCode.V3)
+            {
+				//ScanVRRPStatus();
+				GetVrrpBulkStatus();
+			}
+		}
         if (ScanPorts())
         {
             GUI.TagConnection.UpdatePortTags(ref hostdevice);
@@ -680,6 +683,7 @@ public class aSwitch : aDevice
 
     public bool GetVrrpBulkStatus()
     {
+
         IList<Variable> result = sharpsnmplib.V3GetBulkRequest(this, new List<Variable> { new Variable(vrrpStatus.moxaVrrpTree) });
         if (result == null)
         {

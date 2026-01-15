@@ -326,10 +326,11 @@ namespace NetworkMonitor.snmp
                     log.Debug($"{logname} {v.Id}");
                 }
             }
-            ReportMessage DiscoveryResponseReport = device.snmpV3User.GetDiscoveryResponseMessage(SnmpType.GetBulkRequestPdu);
-            GetBulkRequestMessage request;
-            try
-            {
+			try
+			{
+				ReportMessage DiscoveryResponseReport = device.snmpV3User.GetDiscoveryResponseMessage(SnmpType.GetBulkRequestPdu);
+			    GetBulkRequestMessage request;
+
                 request = new GetBulkRequestMessage(
                     VersionCode.V3,
                     Messenger.NextMessageId,
