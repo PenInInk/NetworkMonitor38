@@ -103,10 +103,10 @@ public class aSwitch : aDevice
         {
             if (this.version == VersionCode.V3)
             {
-				//ScanVRRPStatus();
-				GetVrrpBulkStatus();
-			}
-		}
+                //ScanVRRPStatus();
+                GetVrrpBulkStatus();
+            }
+        }
         if (ScanPorts())
         {
             GUI.TagConnection.UpdatePortTags(ref hostdevice);
@@ -623,64 +623,83 @@ public class aSwitch : aDevice
         {
             return false;
         }
-        if (enterprise != Enterprise.Moxa)
+        if ((enterprise != Enterprise.Moxa) && (enterprise != Enterprise.catalistL3Router))
         {
             return false;
         }
+
         List<Variable> vList = new List<Variable>();
         if (!hostdevice.vrrpStatus.IsInitialized())
         {
-            vList.Add(new Variable(vrrpStatus.moxaFirmwareVersion));
-            vList.Add(new Variable(vrrpStatus.moxaSwitchModel));
-            vList.Add(new Variable(vrrpStatus.moxaVrrpEnable));
-            vList.Add(new Variable(vrrpStatus.moxaVrrpStatus));
-        }
-        else
-        {
-            vList.Add(new Variable(vrrpStatus.moxaVrrpEnable));
-            vList.Add(new Variable(vrrpStatus.moxaVrrpStatus));
-        }
-        ISnmpMessage response = null;
-        try
-        {
-            GetBulkRequestMessage msgScanUps = null;
-            if (version == VersionCode.V2)
+            if (enterprise == Enterprise.Moxa)
             {
-                msgScanUps = new GetBulkRequestMessage(Messenger.NextMessageId, VersionCode.V2, hostdevice.snmpvalues.CommunityString, vList.Count, 1, vList);
+                vList.Add(new Variable(vrrpStatus.moxaFirmwareVersion));
+                vList.Add(new Variable(vrrpStatus.moxaSwitchModel));
+                vList.Add(new Variable(vrrpStatus.moxaVrrpEnable));
+                vList.Add(new Variable(vrrpStatus.moxaVrrpStatus));
             }
-            else if (version == VersionCode.V3)
+            else if (enterprise == Enterprise.catalistL3Router)
             {
-                ReportMessage report = null;
-                report = snmpV3User.GetDiscoveryResponseMessage(SnmpType.GetRequestPdu);
-                msgScanUps = new GetBulkRequestMessage(VersionCode.V3, Messenger.NextMessageId, Messenger.NextRequestId, snmpV3User.username, snmpV3User.ContextName, vList.Count, 1, vList, snmpV3User.privacy, Messenger.MaxMessageSize, report);
+                vList.Add(new Variable(vrrpStatus.genericVrrpAdminState));
+                vList.Add(new Variable(vrrpStatus.genericVrrpOperState));
+                vList.Add(new Variable(vrrpStatus.VrrpV3OperationsStatus));
             }
-            response = msgScanUps.GetResponse(configuration.snmpTimeOutMs, myIpEndpoint);
-        }
-        catch (Lextm.SharpSnmpLib.Messaging.TimeoutException)
-        {
-            return false;
-        }
-        catch (Exception ex)
-        {
-            if (log.IsInfoEnabled)
+            else
             {
-                log.Info("Error occurred while scanning VRRP status: " + ex.Message);
+                if (enterprise == Enterprise.Moxa)
+                {
+                    vList.Add(new Variable(vrrpStatus.moxaVrrpEnable));
+                    vList.Add(new Variable(vrrpStatus.moxaVrrpStatus));
+                }
+                else if (enterprise == Enterprise.catalistL3Router)
+                {
+                    vList.Add(new Variable(vrrpStatus.genericVrrpAdminState));
+                    vList.Add(new Variable(vrrpStatus.genericVrrpOperState));
+                    vList.Add(new Variable(vrrpStatus.VrrpV3OperationsStatus));
+                }
             }
+            ISnmpMessage response = null;
+            try
+            {
+                GetBulkRequestMessage msgScanUps = null;
+                if (version == VersionCode.V2)
+                {
+                    msgScanUps = new GetBulkRequestMessage(Messenger.NextMessageId, VersionCode.V2, hostdevice.snmpvalues.CommunityString, vList.Count, 1, vList);
+                }
+                else if (version == VersionCode.V3)
+                {
+                    ReportMessage report = null;
+                    report = snmpV3User.GetDiscoveryResponseMessage(SnmpType.GetRequestPdu);
+                    msgScanUps = new GetBulkRequestMessage(VersionCode.V3, Messenger.NextMessageId, Messenger.NextRequestId, snmpV3User.username, snmpV3User.ContextName, vList.Count, 1, vList, snmpV3User.privacy, Messenger.MaxMessageSize, report);
+                }
+                response = msgScanUps.GetResponse(configuration.snmpTimeOutMs, myIpEndpoint);
+            }
+            catch (Lextm.SharpSnmpLib.Messaging.TimeoutException)
+            {
+                return false;
+            }
+            catch (Exception ex)
+            {
+                if (log.IsInfoEnabled)
+                {
+                    log.Info("Error occurred while scanning VRRP status: " + ex.Message);
+                }
+            }
+            int errorStatus = response.Pdu().ErrorStatus.ToInt32();
+            if (errorStatus != 0)
+            {
+                log.Error($"{nameof(ScanVRRPStatus)} GetResponse {Enum.GetName(typeof(Lextm.SharpSnmpLib.ErrorCode), errorStatus)}");
+                return false;
+            }
+            if (log.IsDebugEnabled) log.Debug($"{nameof(ScanVRRPStatus)} received {response.Pdu().Variables.Count} Variables");
+            foreach (Variable v in response.Pdu().Variables)
+            {
+                ProcessVrrpStatus(v);
+            }
+            return true;
         }
-        int errorStatus = response.Pdu().ErrorStatus.ToInt32();
-        if (errorStatus != 0)
-        {
-            log.Error($"{nameof(ScanVRRPStatus)} GetResponse {Enum.GetName(typeof(Lextm.SharpSnmpLib.ErrorCode), errorStatus)}");
-            return false;
-        }
-        if (log.IsDebugEnabled) log.Debug($"{nameof(ScanVRRPStatus)} received {response.Pdu().Variables.Count} Variables");
-        foreach (Variable v in response.Pdu().Variables)
-        {
-            ProcessVrrpStatus(v);
-        }
-        return true;
+        return false;
     }
-
     public bool GetVrrpBulkStatus()
     {
 
@@ -761,7 +780,9 @@ public class aSwitch : aDevice
                 }
             }
         }
-        else if (v.Id == vrrpStatus.moxaVrrpStatus)
+        else if ((v.Id == vrrpStatus.moxaVrrpStatus) ||
+            (v.Id == vrrpStatus.VrrpV3OperationsStatus) ||
+            (v.Id == vrrpStatus.genericVrrpOperState))
         {
             if (v.Data.TypeCode == SnmpType.NoSuchInstance || v.Data.TypeCode == SnmpType.NoSuchObject)
             {
