@@ -13,11 +13,11 @@
   </PropertyGroup>
   <PropertyGroup>
     <RootNamespace />
-    <BaseOutputPath>..\Release\</BaseOutputPath>
+    <BaseOutputPath>$(SolutionDir)\output\</BaseOutputPath>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Lextm.SharpSnmpLib" Version="12.5.5" />
-    <PackageReference Include="log4net" Version="2.0.17" />
+    <PackageReference Include="Lextm.SharpSnmpLib" Version="12.5.7" />
+    <PackageReference Include="log4net" Version="3.3.1" />
     <PackageReference Include="SnmpSharpNet-core" Version="1.0.0" />
   </ItemGroup>
   <ItemGroup>
@@ -36,6 +36,9 @@
     </None>
     <None Update="hosts.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="wincc\DM.dll">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </None>
   </ItemGroup>
 </Project>

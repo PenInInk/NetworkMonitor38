@@ -130,14 +130,7 @@ public class aDevice
 
     public void getSystem()
     {
-        if (configuration.SnmpVersion == VersionCode.V3)
-        {
-            sharpsnmplib.V3GetSystem(this);
-        }
-        else
-        {
-            sharpsnmplib.getSystem(this);
-        }
+        sharpsnmplib.getSystem(this);
     }
 
     public virtual bool Poll()

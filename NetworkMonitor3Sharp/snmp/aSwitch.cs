@@ -104,7 +104,10 @@ public class aSwitch : aDevice
             if (this.version == VersionCode.V3)
             {
                 //ScanVRRPStatus();
-                GetVrrpBulkStatus();
+                if (!hostdevice.vrrpStatus.NotAvailable)
+                {
+                    GetVrrpBulkStatus();
+                }
             }
         }
         if (ScanPorts())
@@ -235,12 +238,20 @@ public class aSwitch : aDevice
         return getPortAdminStatus();
     }
 
+    private List<Variable> myPortOperStatusses = new List<Variable>();
     private bool getPortOperStatus()
     {
         if (log.IsDebugEnabled)
         {
             log.Debug($"{this} {nameof(getPortOperStatus)}");
         }
+
+        myPortOperStatusses.Clear();
+        ReportMessage response = snmpV3User.GetDiscoveryResponseMessage(SnmpType.GetBulkRequestPdu);
+        Messenger.BulkWalk(version, myIpEndpoint, hostdevice.snmpvalues.CommunityString, snmpV3User.ContextName, oidPortOperStatus, myPortOperStatusses, configuration.snmpTimeOutMs, configuration.snmpRetries, WalkMode.WithinSubtree, snmpV3User.privacy, response);
+        return handlePortStatus(myPortOperStatusses, typeof(ifOperStatus));
+
+        /*
         if (version == VersionCode.V3)
         {
             return sharpsnmplib.V3GetPortOperStatus(this);
@@ -250,14 +261,22 @@ public class aSwitch : aDevice
             return sharpsnmplib.BulkWalkPortOperStatus(this);
         }
         return sharpsnmplib.WalkPortOperStatus(this);
-    }
+        */
 
+    }
+    private List<Variable> myPortAdminStatusses = new List<Variable>();
     private bool getPortAdminStatus()
     {
         if (log.IsDebugEnabled)
         {
             log.Debug("getPortAdminStatus");
         }
+        myPortAdminStatusses.Clear();
+        ReportMessage response = snmpV3User.GetDiscoveryResponseMessage(SnmpType.GetBulkRequestPdu);
+        Messenger.BulkWalk(version, myIpEndpoint, hostdevice.snmpvalues.CommunityString, snmpV3User.ContextName, oidPortAdminStatus, myPortAdminStatusses, configuration.snmpTimeOutMs, configuration.snmpRetries, WalkMode.WithinSubtree, snmpV3User.privacy, response);
+        return handlePortStatus(myPortAdminStatusses, typeof(ifAdminStatus));
+
+        /*
         if (version == VersionCode.V3)
         {
             return sharpsnmplib.V3GetPortAdminStatus(this);
@@ -267,6 +286,7 @@ public class aSwitch : aDevice
             return sharpsnmplib.BulkWalkPortAdminStatus(this);
         }
         return sharpsnmplib.WalkPortAdminStatus(this);
+        */
     }
 
     public bool handlePortStatus(IList<Variable> received, Type portStatusType)
@@ -724,6 +744,7 @@ public class aSwitch : aDevice
         }
         return true;
     }
+
     private void ProcessVrrpStatus(Variable v)
     {
         if (log.IsDebugEnabled)
@@ -733,7 +754,7 @@ public class aSwitch : aDevice
         if (!v.Id.ToString().StartsWith("1.3.6.1.4.1.8691.6.100.1.16.1.1.1"))
         {
             hostdevice.vrrpStatus.NotAvailable = true;
-            log.Warn($"{hostdevice} VRRP Status not available");
+            //log.Info($"{hostdevice} VRRP Status not available");
             return;
         }
 
@@ -757,7 +778,7 @@ public class aSwitch : aDevice
 
                 if (v.Data.TypeCode == SnmpType.Gauge32)
                 {
-                    log.Warn($"{hostdevice} VRRP Enable has wrong type {v.Data.TypeCode}");
+                    if (log.IsDebugEnabled) log.Warn($"{hostdevice} VRRP Enable has wrong type {v.Data.TypeCode}");
                 }
                 int iEnable = 0;
                 if (int.TryParse(v.Data.ToString(), out iEnable))
@@ -787,7 +808,7 @@ public class aSwitch : aDevice
             if (v.Data.TypeCode == SnmpType.NoSuchInstance || v.Data.TypeCode == SnmpType.NoSuchObject)
             {
                 hostdevice.vrrpStatus.NotAvailable = true;
-                log.Warn($"{hostdevice} VRRP Status not available");
+                if (log.IsDebugEnabled) log.Debug($"{hostdevice} VRRP Status not available");
                 return;
             }
             else

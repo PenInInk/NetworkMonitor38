@@ -1,11 +1,14 @@
 ﻿using Lextm.SharpSnmpLib;
 using Lextm.SharpSnmpLib.Messaging;
 using log4net;
+using Siemens.Industry.ProcessManagement.ManagedODK;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Net;
 using System.Reflection;
+using static NetworkMonitor.configuration;
 
 
 namespace NetworkMonitor.snmp
@@ -17,6 +20,14 @@ namespace NetworkMonitor.snmp
 
         public static void getSystem(aDevice device)
         {
+            if (device.version == VersionCode.V3)
+                GetSystemV3(device);
+            else
+                GetSystemV2(device);
+        }
+
+        private static void GetSystemV2(aDevice device)
+        { 
             string logname = $"{device.myIpEndpoint}";
             if (log.IsDebugEnabled)
             {
@@ -162,6 +173,7 @@ namespace NetworkMonitor.snmp
             List<Variable> result = new List<Variable>();
             chrono.Reset();
             chrono.Start();
+
             try
             {
                 Messenger.Walk(VersionCode.V2, device.myIpEndpoint, device.CommunityString, device.oidPortOperStatus, result, configuration.snmpTimeOutMs, WalkMode.WithinSubtree);
@@ -283,10 +295,15 @@ namespace NetworkMonitor.snmp
         }
 
         #region SNMPv3
-
+        /*
         public static bool V3GetPortOperStatus(aSwitch device)
         {
-            IList<Variable> result = V3GetBulkRequest(device, new List<Variable> { new Variable(device.oidPortOperStatus) });
+            Variable varPortOperStatus = new Variable(device.oidPortOperStatus);
+            List<Variable> ListWithPortOperStatus = new List<Variable>();
+            ListWithPortOperStatus.Add(varPortOperStatus);
+
+            IList<Variable> result = V3GetBulkRequest(device,ListWithPortOperStatus);
+
             if (result == null) return false;
             if (result.Count == 0) return false;
             return device.handlePortStatus(result, typeof(ifOperStatus));
@@ -299,17 +316,47 @@ namespace NetworkMonitor.snmp
             if (result.Count == 0) return false;
             return device.handlePortStatus(result, typeof(ifAdminStatus));
         }
+        */
 
-        public static bool V3GetSystem(aDevice device)
+        private static bool GetSystemV3(aDevice device)
         {
-            IList<Variable> result = V3GetBulkRequest(device, device.mySystemInfo);
-            if (result == null) return false;
+            List<Variable> result = new List<Variable>();
+
+            try
+            {
+                //result = V3GetBulkRequest(device, device.mySystemInfo);
+                // GetBulkRequest returns max 20 Variables > out of use
+
+                ReportMessage response = device.snmpV3User.GetDiscoveryResponseMessage(SnmpType.GetBulkRequestPdu);
+                Messenger.BulkWalk(device.version, device.myIpEndpoint, device.CommunityString, device.snmpV3User.ContextName, aDevice.oidSystemOID, result, configuration.snmpTimeOutMs, configuration.snmpRetries, WalkMode.WithinSubtree, device.snmpV3User.privacy, response);
+            }
+            catch (Lextm.SharpSnmpLib.Messaging.TimeoutException)
+            {
+                if (log.IsDebugEnabled) log.Debug($"{device.ToString()} GetSystem: Timeout");
+                return false;
+            }
+            catch (Lextm.SharpSnmpLib.Messaging.PortInUseException)
+            {
+                if (log.IsDebugEnabled) log.Debug($"{device.ToString()} GetSystem: PortInUse");
+                return false;
+            }
+            catch (Exception e)
+            {
+                if (log.IsDebugEnabled) log.Debug($"{device.ToString()} GetSystem: {e.Message}");
+                return false;
+            }
+
+            if (result == null)
+            {
+                if (log.IsDebugEnabled) log.Debug($"{device.ToString()} GetSystem: received zero variables");
+                return false;
+            }
             if (result.Count <= 0)
             {
-
                 log.Warn($"{device.myIpEndpoint} getSystem: {configuration.snmpTimeOutMs} ms timeout {device.hostdevice.snmpvalues.CountSnmpGetTimeOut} x - verify snmp V3 User & password");
                 return false;
             }
+
             foreach (Variable v in result)
             {
                 device.ProcessSystem(v);
@@ -338,7 +385,7 @@ namespace NetworkMonitor.snmp
                     device.CommunityString,
                     device.snmpV3User.ContextName,
                     0,
-                    10,
+                    28,
                     oid,
                     device.snmpV3User.privacy,
                     Messenger.MaxMessageSize,
@@ -364,7 +411,7 @@ namespace NetworkMonitor.snmp
                         device.CommunityString,
                         device.snmpV3User.ContextName,
                         0,
-                        10,
+                        28,
                         oid,
                         device.snmpV3User.privacy,
                         Messenger.MaxMessageSize,
