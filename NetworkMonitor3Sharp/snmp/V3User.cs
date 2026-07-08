@@ -46,7 +46,7 @@ public class V3User
 
     public IAuthenticationProvider auth;
 
-    public IPrivacyProvider privacy;
+    public IPrivacyProvider privacy = null;
 
     public IPEndPoint IpEndpoint
     {

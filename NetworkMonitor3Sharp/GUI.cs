@@ -195,6 +195,10 @@ public class GUI : Form
             }
         }
         InitialialiseListBox();
+        if (configuration.snmpListenToTraps)
+        {
+            TrapReceiver.Start();
+        }
         return true;
     }
 

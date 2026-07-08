@@ -149,8 +149,25 @@ public class aSwitch : aDevice
         try
         {
             myRingStatus.Clear();
-            ReportMessage response = snmpV3User.GetDiscoveryResponseMessage(SnmpType.GetBulkRequestPdu);
-            Messenger.BulkWalk(configuration.SnmpVersion, myIpEndpoint, hostdevice.snmpvalues.CommunityString, snmpV3User.ContextName, oidRingStatus, myRingStatus, configuration.snmpTimeOutMs, configuration.snmpRetries, WalkMode.WithinSubtree, snmpV3User.privacy, response);
+            if (this.version == VersionCode.V3)
+            {
+                ReportMessage response = snmpV3User.GetDiscoveryResponseMessage(SnmpType.GetBulkRequestPdu);
+                Messenger.BulkWalk(configuration.SnmpVersion,
+                    myIpEndpoint,
+                    hostdevice.snmpvalues.CommunityString,
+                    snmpV3User.ContextName,
+                    oidRingStatus,
+                    myRingStatus,
+                    configuration.snmpTimeOutMs,
+                    configuration.snmpRetries,
+                    WalkMode.WithinSubtree,
+                    snmpV3User.privacy,
+                    response);
+            }
+            else
+            {
+                Messenger.Walk(version, myIpEndpoint, CommunityString, oidPortAdminStatus, myRingStatus, configuration.snmpTimeOutMs, WalkMode.WithinSubtree);
+            }
         }
         catch (Exception ex)
         {
@@ -194,6 +211,10 @@ public class aSwitch : aDevice
             {
                 ReportMessage response = snmpV3User.GetDiscoveryResponseMessage(SnmpType.GetBulkRequestPdu);
                 Messenger.BulkWalk(configuration.SnmpVersion, myIpEndpoint, hostdevice.snmpvalues.CommunityString, snmpV3User.ContextName, oidSensorValues, mySensorValues, configuration.snmpTimeOutMs, configuration.snmpRetries, WalkMode.WithinSubtree, snmpV3User.privacy, response);
+            }
+            else
+            {
+                Messenger.Walk(version, myIpEndpoint, CommunityString, oidSensorValues, mySensorValues, configuration.snmpTimeOutMs, WalkMode.WithinSubtree);
             }
         }
         catch (Exception ex)
@@ -245,25 +266,19 @@ public class aSwitch : aDevice
         {
             log.Debug($"{this} {nameof(getPortOperStatus)}");
         }
-
         myPortOperStatusses.Clear();
-        ReportMessage response = snmpV3User.GetDiscoveryResponseMessage(SnmpType.GetBulkRequestPdu);
-        Messenger.BulkWalk(version, myIpEndpoint, hostdevice.snmpvalues.CommunityString, snmpV3User.ContextName, oidPortOperStatus, myPortOperStatusses, configuration.snmpTimeOutMs, configuration.snmpRetries, WalkMode.WithinSubtree, snmpV3User.privacy, response);
-        return handlePortStatus(myPortOperStatusses, typeof(ifOperStatus));
-
-        /*
         if (version == VersionCode.V3)
         {
-            return sharpsnmplib.V3GetPortOperStatus(this);
+            ReportMessage response = snmpV3User.GetDiscoveryResponseMessage(SnmpType.GetBulkRequestPdu);
+            Messenger.BulkWalk(version, myIpEndpoint, hostdevice.snmpvalues.CommunityString, snmpV3User.ContextName, oidPortOperStatus, myPortOperStatusses, configuration.snmpTimeOutMs, configuration.snmpRetries, WalkMode.WithinSubtree, snmpV3User.privacy, response);
         }
-        if (configuration.snmpBulkWalk)
+        else
         {
-            return sharpsnmplib.BulkWalkPortOperStatus(this);
+            Messenger.Walk(VersionCode.V2, myIpEndpoint, CommunityString, oidPortOperStatus, myPortOperStatusses, configuration.snmpTimeOutMs, WalkMode.WithinSubtree);
         }
-        return sharpsnmplib.WalkPortOperStatus(this);
-        */
-
+        return handlePortStatus(myPortOperStatusses, typeof(ifOperStatus));
     }
+
     private List<Variable> myPortAdminStatusses = new List<Variable>();
     private bool getPortAdminStatus()
     {
@@ -271,22 +286,20 @@ public class aSwitch : aDevice
         {
             log.Debug("getPortAdminStatus");
         }
-        myPortAdminStatusses.Clear();
-        ReportMessage response = snmpV3User.GetDiscoveryResponseMessage(SnmpType.GetBulkRequestPdu);
-        Messenger.BulkWalk(version, myIpEndpoint, hostdevice.snmpvalues.CommunityString, snmpV3User.ContextName, oidPortAdminStatus, myPortAdminStatusses, configuration.snmpTimeOutMs, configuration.snmpRetries, WalkMode.WithinSubtree, snmpV3User.privacy, response);
-        return handlePortStatus(myPortAdminStatusses, typeof(ifAdminStatus));
 
-        /*
+        myPortAdminStatusses.Clear();
+
         if (version == VersionCode.V3)
         {
-            return sharpsnmplib.V3GetPortAdminStatus(this);
+            ReportMessage response = snmpV3User.GetDiscoveryResponseMessage(SnmpType.GetBulkRequestPdu);
+            Messenger.BulkWalk(version, myIpEndpoint, hostdevice.snmpvalues.CommunityString, snmpV3User.ContextName, oidPortAdminStatus, myPortAdminStatusses, configuration.snmpTimeOutMs, configuration.snmpRetries, WalkMode.WithinSubtree, snmpV3User.privacy, response);
         }
-        if (configuration.snmpBulkWalk)
+        else
         {
-            return sharpsnmplib.BulkWalkPortAdminStatus(this);
+            Messenger.Walk(VersionCode.V2, myIpEndpoint, CommunityString, oidPortAdminStatus, myPortAdminStatusses, configuration.snmpTimeOutMs, WalkMode.WithinSubtree);
         }
-        return sharpsnmplib.WalkPortAdminStatus(this);
-        */
+        return handlePortStatus(myPortAdminStatusses, typeof(ifAdminStatus));
+
     }
 
     public bool handlePortStatus(IList<Variable> received, Type portStatusType)
@@ -720,10 +733,20 @@ public class aSwitch : aDevice
         }
         return false;
     }
+
+
     public bool GetVrrpBulkStatus()
     {
+        IList<Variable> result;
+        if (version == VersionCode.V3)
+        {
+            result = sharpsnmplib.V3GetBulkRequest(this, new List<Variable> { new Variable(vrrpStatus.moxaVrrpTree) });
+        }
+        else
+        {
+            result = sharpsnmplib.V3GetBulkRequest(this, new List<Variable> { new Variable(vrrpStatus.moxaVrrpTree) });
+        }
 
-        IList<Variable> result = sharpsnmplib.V3GetBulkRequest(this, new List<Variable> { new Variable(vrrpStatus.moxaVrrpTree) });
         if (result == null)
         {
             if (log.IsDebugEnabled)
@@ -738,6 +761,7 @@ public class aSwitch : aDevice
         }
         if (log.IsDebugEnabled)
             log.Debug($"{ToString()} {nameof(GetVrrpBulkStatus)} returned {result.Count} values");
+
         foreach (Variable v in result)
         {
             ProcessVrrpStatus(v);
