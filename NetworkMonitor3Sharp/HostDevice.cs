@@ -99,6 +99,27 @@ public class HostDevice
         public bool UpdatePortsTagsRequested;
 
         public bool UpdateDisabledTag = Settings.Default.UpdateDisabledTag;
+
+        #region tag: ALARMS
+        public bool AlarmTagExist = true;
+
+        public uint AlarmTagValue = 0;
+
+        public bool AlarmTagUpdateRequested = false;
+        #endregion
+
+        public bool ChangedDetected()
+        {
+            if (UpdateDisabledTagRequested || UpdateStatusTagRequested || UpdateSystemTagRequested || UpdatePortsTagsRequested)
+            {
+                return true;
+            }
+            if (AlarmTagUpdateRequested)
+            {
+                return true;
+            }
+            return false;
+        }
     }
 
     public class snmpValues
@@ -126,6 +147,14 @@ public class HostDevice
         public DateTime lastSnmpRequest;
 
         public TimeSpan WaitTimeSnmpGets;
+
+        #region tag: ALARMS
+
+        public bool LogInFailed = false;
+
+        public DateTime LogInFailedAlarmTime = DateTime.MinValue;
+
+        #endregion
 
         public snmpValues()
         {
@@ -170,6 +199,8 @@ public class HostDevice
 
     public bool Power2Failed;
 
+    public bool LogInFailed;
+
     public SnmpPort[] Ports = new SnmpPort[32];
 
     public bool ups;
@@ -188,6 +219,13 @@ public class HostDevice
     public PingReply pingReply;
 
     public TagValues tagvalues = new TagValues();
+    public bool TagValuesChangeDetected
+    {
+        get
+        {
+            return tagvalues.ChangedDetected();
+        }
+    }
 
     public snmpValues snmpvalues = new snmpValues();
 

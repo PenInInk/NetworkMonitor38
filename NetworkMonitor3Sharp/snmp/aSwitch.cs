@@ -110,12 +110,25 @@ public class aSwitch : aDevice
                 }
             }
         }
+        ScanAlarms();
         if (ScanPorts())
         {
             GUI.TagConnection.UpdatePortTags(ref hostdevice);
             return true;
         }
+
         return false;
+    }
+
+    private void ScanAlarms()
+    {
+        if (hostdevice.snmpvalues.LogInFailedAlarmTime == DateTime.MinValue) return;
+
+        if (DateTime.Now.Subtract(hostdevice.snmpvalues.LogInFailedAlarmTime).TotalSeconds > 15)
+        {
+            hostdevice.snmpvalues.LogInFailed = false;
+            hostdevice.snmpvalues.LogInFailedAlarmTime = DateTime.MinValue;
+        }
     }
 
     private bool ScanRingStatus()
@@ -633,14 +646,19 @@ public class aSwitch : aDevice
                     }
                 }
             }
+            else if (oid.StartsWith("1.3.6.1.4.1.9.9.46.1.6.1.1.14."))
+            {
+                ifStatus aPortStatus2 = new ifStatus(trap, enterprise);
+                hostdevice.Ports[aPortStatus2.portNr - 1].OperStatus = (long)aPortStatus2.portStatus;
+                return true;
+            }
+            else if (oid.StartsWith("to do"))
+            {
+                this.hostdevice.snmpvalues.LogInFailed = true;
+                this.hostdevice.snmpvalues.LogInFailedAlarmTime = DateTime.Now;
+            }
             else
             {
-                if (oid.StartsWith("1.3.6.1.4.1.9.9.46.1.6.1.1.14."))
-                {
-                    ifStatus aPortStatus2 = new ifStatus(trap, enterprise);
-                    hostdevice.Ports[aPortStatus2.portNr - 1].OperStatus = (long)aPortStatus2.portStatus;
-                    return true;
-                }
                 if (log.IsDebugEnabled)
                 {
                     log.Debug("trap ignored.");

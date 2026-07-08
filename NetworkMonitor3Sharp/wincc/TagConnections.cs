@@ -118,9 +118,9 @@ internal static class TagConnections
             }
             return;
         }
-        uint Value = 0u;
+
         string Area = null;
-        Value = 0u;
+
         Area = "begin " + device.host.HostName;
         try
         {
@@ -152,7 +152,8 @@ internal static class TagConnections
                 }
                 device.tagvalues.UpdatePortsTagsRequested = false;
             }
-            Value = 0u;
+
+            uint Value = 0u;
             Area = "update ups Status";
             if (device.ups)
             {
@@ -248,6 +249,18 @@ internal static class TagConnections
                     log.Debug(device.tagvalues.TagName + ".DISABLED = 0x" + device.tagvalues.tagDisabledValue.ToString("X4"));
                 }
                 device.tagvalues.UpdateDisabledTagRequested = false;
+            }
+
+            Area = "alarm tag";
+            uint alarmTagValue = 0u;
+            if (device.snmpvalues.LogInFailed)
+            {
+                alarmTagValue |= 1u;
+            }
+            if (device.tagvalues.AlarmTagValue != alarmTagValue || RequestWriteAllTags)
+            {
+                tags.Add(new KeyValuePair<string, object>(device.tagvalues.TagName + ".ALARMS", alarmTagValue));
+                device.tagvalues.AlarmTagValue = alarmTagValue;
             }
         }
         catch (Exception ex)

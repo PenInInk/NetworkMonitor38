@@ -22,10 +22,10 @@ namespace NetworkMonitor
 
         public static void Start()
         {
-            Task.Run(() => StartAsync());
+            Task.Run(() => Run());
         }
 
-        private static void StartAsync()
+        private static void Run()
         {
             log.Info("Trap Receiver Start.");
             // Default SNMP trap listening port (162 requires admin rights, so use >1024 for testing)
@@ -73,11 +73,15 @@ namespace NetworkMonitor
                             {
                                 GUI.AddMsgToListView(RemoteIpAddress.ToString(), variable.Id.ToString(), variable.Data.ToString());
                             }
+                            if (log.IsDebugEnabled)
+                            {
+                                log.Debug($"Trap received from {RemoteIpAddress}: {variable.Id} = {variable.Data}");
+                            }
                         }
                         if (changedetected)
                         {
                             GUI.TagConnection.UpdatePortTags(ref device);
-                            if (device.tagvalues.UpdatePortsTagsRequested || device.tagvalues.UpdateStatusTagRequested || device.tagvalues.UpdateDisabledTagRequested)
+                            if (device.TagValuesChangeDetected)
                             {
                                 GUI.TagConnection.Write(GUI.TagConnection.GetChangedTags(ref device));
                             }
@@ -87,25 +91,24 @@ namespace NetworkMonitor
                     {
                         log.Error(se.Message);
                         //log.Error(ex.InnerException);
-                        GUI.AddMsgToListView("", "Start Trap receiver", se.Message);
+                        GUI.AddMsgToListView("", "Trap receiver", se.Message);
                     }
                     catch (ObjectDisposedException od)
                     {
                         log.Error(od.Message);
                         //log.Error(ex.InnerException);
-                        GUI.AddMsgToListView("", "Start Trap receiver", od.Message);
+                        GUI.AddMsgToListView("", "Trap receiver", od.Message);
                     }
                     catch (Exception ex)
                     {
                         log.Error(ex.Message);
                         //log.Error(ex.InnerException);
-                        //GUI.AddMsgToListView("", "Start Trap receiver", ex.Message);
-                        //GUI.AddMsgToListView("", "Start Trap receiver", ex.InnerException.Message);
+                        //GUI.AddMsgToListView("", "Trap receiver", ex.Message);
+                        //GUI.AddMsgToListView("", "Trap receiver", ex.InnerException.Message);
                     }
+                    log.Info("Trap Receiver Terminated");
                 }
-                log.Info("Trap Receiver Terminated");
             }
-            log.Info("Trap Receiver Terminated");
         }
         
         public static void Stop()
