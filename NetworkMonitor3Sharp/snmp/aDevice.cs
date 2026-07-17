@@ -23,13 +23,13 @@ public class aDevice
         catalistL2Switch = 1208,
         catalistL3Router = 2066,
         ScalanceXR328 = 4329,
-        Moxa = 8691
+        Moxa = 8691,
+        MoxaEDR = 6 // 8691.6
     }
     private static string strSystemOID = "1.3.6.1.2.1.1.2";
     private static string strSystemName = "1.3.6.1.2.1.1.5";
     private static string strSystemDescription = "1.3.6.1.2.1.1.6";
     private static string strNrOfInterfaces = "1.3.6.1.2.1.2.1";
-
     public static ObjectIdentifier oidSystemOID = new ObjectIdentifier(strSystemOID);
     public static ObjectIdentifier oidSystemName = new ObjectIdentifier(strSystemName);
     public static ObjectIdentifier oidSystemDescription = new ObjectIdentifier(strSystemDescription);
@@ -38,6 +38,8 @@ public class aDevice
     public static string sysUpTime = "1.3.6.1.2.1.1.3";
     public static string snmpTrapOID = "1.3.6.1.6.3.1.1.4.1";
     public static string apcTestTrap = "1.3.6.1.4.1.318.0.636";
+    //{iso(1) identified-organization(3) dod(6) internet(1) snmpV2(6) snmpModules(3) snmpMIB(1) snmpMIBObjects(1) snmpTraps(5) authenticationFailure(5)}
+    public static string strLoginFailedRFC3418 = "1.3.6.1.6.3.1.1.5.5";
 
 
     private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
@@ -62,6 +64,12 @@ public class aDevice
     {
         if (SystemObjectId.Contains(".8691."))
         {
+            // EDR-810
+            // 1.3.6.1.4.1.8691.6.100.2.855769089
+            //.iso.org.dod.internet.private.enterprises.moxa.industrialRouter.insrouter.
+            if (SystemObjectId.Contains(".8691.6.100.2"))
+                return Enterprise.MoxaEDR;
+
             return Enterprise.Moxa;
         }
         else if (SystemObjectId.Contains(".9.1.2959"))
@@ -247,6 +255,10 @@ public class aDevice
         return false;
     }
 
+    public virtual bool ProcessTrap(ISnmpPdu pdu)
+    {
+        return false;
+    }
     public virtual void InitOids(Enterprise brand)
     {
     }

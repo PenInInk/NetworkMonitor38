@@ -36,9 +36,10 @@ namespace NetworkMonitor.snmp
 
         public static ObjectIdentifier moxaSwitchModel = new ObjectIdentifier("1.3.6.1.4.1.8691.6.100.1.22.2.0"); // String
         public static ObjectIdentifier moxaFirmwareVersion = new ObjectIdentifier("1.3.6.1.4.1.8691.6.100.1.22.4.0"); // String
-        public static ObjectIdentifier moxaVrrpStatus = new ObjectIdentifier("1.3.6.1.4.1.8691.6.100.1.16.1.1.1.8.1"); // ASN_INTEGER
-        public static ObjectIdentifier moxaVrrpEnable = new ObjectIdentifier("1.3.6.1.4.1.8691.6.100.1.16.1.1.1.3.1"); // ASN_INTEGER
+        public static ObjectIdentifier moxaVrrpStatus = new ObjectIdentifier("1.3.6.1.4.1.8691.6.100.1.16.1.1.1.8"); // ASN_INTEGER
+        public static ObjectIdentifier moxaVrrpEnable = new ObjectIdentifier("1.3.6.1.4.1.8691.6.100.1.16.1.1.1.3"); // ASN_INTEGER
         public static ObjectIdentifier moxaVrrpTree = new ObjectIdentifier("1.3.6.1.4.1.8691.6.100.1.16.1.1.1");
+        public static ObjectIdentifier moxaLoginFailStatus = new ObjectIdentifier("1.3.6.1.4.1.8691.6.100.1.23.7");
 
         #region RFC-2787-VRRP
         /* vrrp oper state values:

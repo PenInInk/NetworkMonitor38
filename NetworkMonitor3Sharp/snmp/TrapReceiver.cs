@@ -9,6 +9,7 @@ using System;
 using System.Linq.Expressions;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 
 
@@ -56,19 +57,32 @@ namespace NetworkMonitor
                         IPAddress RemoteIpAddress = EndPointTrapReceiver.Address;
 
                         // Parse SNMP message
-                        ISnmpMessage message = MessageFactory.ParseMessages(buffer, 0, buffer.Length, new UserRegistry())[0];
+                        //ISnmpMessage message = MessageFactory.ParseMessages(buffer, 0, buffer.Length, new UserRegistry())[0];
+                        var message = MessageFactory.ParseMessages(buffer, 0, buffer.Length, new UserRegistry())[0];
                         VersionCode version = message.Version;
+                        Header header = message.Header;
                         SecurityParameters parameters = message.Parameters;
                         HostDevice device = configuration.GetDevice(RemoteIpAddress);
-
+                        
                         // Print variable bindings
                         bool changedetected = false;
+                        if (log.IsDebugEnabled) log.Debug($"{message.Pdu().ToString()}");
+                        
+                        if (message.Pdu().Variables.Count == 0)
+                        {
+                            ISnmpPdu pdu = message.Pdu();
+                            device.data.ProcessTrap(pdu);
+                        }
                         foreach (var variable in message.Pdu().Variables)
                         {
+                            if (device != null)
+                            {
                             if (device.data.ProcessTrap(variable))
                             {
                                 changedetected = true;
                             }
+                            }
+
                             if (GUI.IsGuiVisible)
                             {
                                 GUI.AddMsgToListView(RemoteIpAddress.ToString(), variable.Id.ToString(), variable.Data.ToString());
@@ -106,9 +120,11 @@ namespace NetworkMonitor
                         //GUI.AddMsgToListView("", "Trap receiver", ex.Message);
                         //GUI.AddMsgToListView("", "Trap receiver", ex.InnerException.Message);
                     }
-                    log.Info("Trap Receiver Terminated");
+                    //log.Info("Trap Receiver Terminated");
                 }
+                log.Info("Trap Receiver Terminated");
             }
+            log.Info("Trap Receiver Terminated");
         }
         
         public static void Stop()

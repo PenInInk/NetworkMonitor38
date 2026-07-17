@@ -253,10 +253,19 @@ internal static class TagConnections
 
             Area = "alarm tag";
             uint alarmTagValue = 0u;
-            if (device.snmpvalues.LogInFailed)
-            {
-                alarmTagValue |= 1u;
-            }
+
+            if (device.LogInFailed)  alarmTagValue |= 1;
+            if (device.SecurityNotification) alarmTagValue |= 2;
+            if (device.ConfigurationChanged) alarmTagValue |= 4;
+            if (device.WANConnected) alarmTagValue |= 8;
+            if (device.WANDisconnected) alarmTagValue |= 0x10;
+            if (device.VPNConnected) alarmTagValue |= 0x20;
+            if (device.VPNDisconnected) alarmTagValue |= 0x40;
+            if (device.FireWallConfigChanged) alarmTagValue |= 0x80;
+            if (device.FireWallPolicy) alarmTagValue |= 0x100;
+            if (device.vrrpStatus.Master) alarmTagValue |= 0x200;
+            if (device.vrrpStatus.Backup) alarmTagValue |= 0x400;
+
             if (device.tagvalues.AlarmTagValue != alarmTagValue || RequestWriteAllTags)
             {
                 tags.Add(new KeyValuePair<string, object>(device.tagvalues.TagName + ".ALARMS", alarmTagValue));

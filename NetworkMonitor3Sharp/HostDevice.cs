@@ -1,4 +1,4 @@
-using Lextm.SharpSnmpLib;
+
 using log4net;
 using NetworkMonitor.Properties;
 using NetworkMonitor.snmp;
@@ -7,6 +7,7 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Reflection;
 using System.Text;
+using System.Web.Configuration;
 
 namespace NetworkMonitor;
 
@@ -122,62 +123,6 @@ public class HostDevice
         }
     }
 
-    public class snmpValues
-    {
-        public string Description = "";
-
-        public string sysObjectID = "";
-
-        public long nrInterfaces;
-
-        public string SystemName = "";
-
-        public OctetString CommunityString;
-
-        public int PortSNMP = 161;
-
-        public bool PortAdminStatusInitialised;
-
-        public bool PortOperStatusInitialized;
-
-        public int CountSnmpGetTimeOut;
-
-        public int snmpGetNoResponse;
-
-        public DateTime lastSnmpRequest;
-
-        public TimeSpan WaitTimeSnmpGets;
-
-        #region tag: ALARMS
-
-        public bool LogInFailed = false;
-
-        public DateTime LogInFailedAlarmTime = DateTime.MinValue;
-
-        #endregion
-
-        public snmpValues()
-        {
-            int waitTime = configuration.PollInterval;
-            if (configuration.PollInterval > 1)
-            {
-                WaitTimeSnmpGets = new TimeSpan(0, 0, waitTime);
-            }
-            else
-            {
-                WaitTimeSnmpGets = new TimeSpan(0, 0, 30);
-            }
-            if (configuration.SnmpCommunity.Length > 0)
-            {
-                CommunityString = new OctetString(configuration.SnmpCommunity);
-            }
-            else
-            {
-                CommunityString = new OctetString("public");
-            }
-            lastSnmpRequest = DateTime.MinValue;
-        }
-    }
 
     private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
@@ -192,14 +137,104 @@ public class HostDevice
     public int Temperature;
 
     public bool Power1ok;
-
     public bool Power1Failed;
 
     public bool Power2ok;
-
     public bool Power2Failed;
 
-    public bool LogInFailed;
+    public bool WANConnected;
+    public bool WANDisconnected;
+
+    public bool VPNConnected;
+    public bool VPNDisconnected;
+
+    #region need latch for 1 minute
+    
+    public DateTime ResetTime = DateTime.MinValue;
+    private object ResetTimeLock;
+    public bool ResetOldLatchedStates()
+    {
+        if (ResetTime == DateTime.MinValue) return false;
+        if (ResetTime > DateTime.Now) return false;
+
+        LogInFailed = false;
+        ConfigurationChanged = false;
+        SecurityNotification = false;
+        FireWallConfigChanged = false;
+        FireWallPolicy = false;
+
+        lock (ResetTimeLock)
+        {
+            ResetTime = DateTime.MinValue;
+        }
+        return true;
+    }
+    public bool LogInFailed
+    {
+        get { return mLogInFailed; }
+        set 
+        {   if (mLogInFailed == value) return;
+            mLogInFailed = value;
+            if (value)
+                lock(ResetTimeLock)
+                    ResetTime = DateTime.Now.AddMinutes(1);
+        }
+    }
+    public bool ConfigurationChanged
+    {
+        get { return mConfigurationChanged; }
+        set
+        {
+            if (mConfigurationChanged == value) return;
+            mConfigurationChanged = value;
+            if (value)
+                lock (ResetTimeLock) 
+                    ResetTime = DateTime.Now.AddMinutes(1);
+        }
+    }
+    public bool SecurityNotification
+    {
+        get { return mSecurityNotification; }
+        set
+        {
+            if (mSecurityNotification == value) return;
+            mSecurityNotification = value;
+            if (value)
+                lock (ResetTimeLock)
+                    ResetTime = DateTime.Now.AddMinutes(1);
+        }
+    }
+    public bool FireWallConfigChanged
+    {
+        get { return mFireWallConfigChanged; }
+        set
+        {
+            if (mFireWallConfigChanged == value) return;
+            mFireWallConfigChanged = value;
+            if (value)
+                lock (ResetTimeLock)
+                    ResetTime = DateTime.Now.AddMinutes(1);
+        }
+    }
+    public bool FireWallPolicy
+    {
+        get { return mFireWallPolicy; }
+        set
+        {
+            if (mFireWallPolicy == value) return;
+            mFireWallPolicy = value;
+            if (value)
+                lock (ResetTimeLock)
+                    ResetTime = DateTime.Now.AddMinutes(1);
+        }
+    }
+
+    private bool mLogInFailed = false;
+    private bool mConfigurationChanged = false;
+    private bool mSecurityNotification = false;
+    private bool mFireWallConfigChanged = false;
+    private bool mFireWallPolicy = false;
+    #endregion
 
     public SnmpPort[] Ports = new SnmpPort[32];
 

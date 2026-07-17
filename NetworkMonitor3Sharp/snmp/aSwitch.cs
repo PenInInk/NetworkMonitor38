@@ -4,9 +4,12 @@ using log4net;
 using log4net.Core;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
+using System.Web.UI;
 
 namespace NetworkMonitor.snmp;
 
@@ -99,18 +102,17 @@ public class aSwitch : aDevice
     {
         ScanRingStatus();
         ScanSensorValues();
-        if (this.enterprise == Enterprise.Moxa)
+        if (this.enterprise == Enterprise.MoxaEDR)
         {
-            if (this.version == VersionCode.V3)
+            //if (!hostdevice.vrrpStatus.NotAvailable)
             {
-                //ScanVRRPStatus();
-                if (!hostdevice.vrrpStatus.NotAvailable)
-                {
-                    GetVrrpBulkStatus();
-                }
+                ScanRouterStatus();
             }
         }
-        ScanAlarms();
+        if (hostdevice.ResetOldLatchedStates())
+        {
+            // tag will change. 
+        }
         if (ScanPorts())
         {
             GUI.TagConnection.UpdatePortTags(ref hostdevice);
@@ -118,17 +120,6 @@ public class aSwitch : aDevice
         }
 
         return false;
-    }
-
-    private void ScanAlarms()
-    {
-        if (hostdevice.snmpvalues.LogInFailedAlarmTime == DateTime.MinValue) return;
-
-        if (DateTime.Now.Subtract(hostdevice.snmpvalues.LogInFailedAlarmTime).TotalSeconds > 15)
-        {
-            hostdevice.snmpvalues.LogInFailed = false;
-            hostdevice.snmpvalues.LogInFailedAlarmTime = DateTime.MinValue;
-        }
     }
 
     private bool ScanRingStatus()
@@ -490,6 +481,7 @@ public class aSwitch : aDevice
     {
         if (trap != null)
         {
+            //.1.3.6.1.2.1.2.2.1.1
             string oid = trap.Id.ToString();
             long PortNr = 0L;
             if (oid.StartsWith("interfaces.ifTable.ifEntry.ifOperStatus.") || oid.StartsWith("1.3.6.1.2.1.2.2.1.8"))
@@ -508,6 +500,11 @@ public class aSwitch : aDevice
                 {
                     log.Debug("-traped OperPortStatus " + oid + " = " + Enum.GetName(typeof(ifOperStatus), aPortStatus.portStatus));
                 }
+            }
+            else if (oid.StartsWith("interfaces.ifTable.ifEntry.ifIndex.") || oid.StartsWith("1.3.6.1.2.1.2.2.1.1"))
+            {
+                //.iso.org.dod.internet.mgmt.mib-2.interfaces.ifTable.ifEntry.ifIndex
+
             }
             else if (oid.IndexOf("1.3.6.1.4.1.4329.20.1.1.1.1.28.3.0") >= 0)
             {
@@ -652,106 +649,277 @@ public class aSwitch : aDevice
                 hostdevice.Ports[aPortStatus2.portNr - 1].OperStatus = (long)aPortStatus2.portStatus;
                 return true;
             }
-            else if (oid.StartsWith("to do"))
+            else if (oid.StartsWith("1.3.6.1.4.1.8691.6.100.0"))
             {
-                this.hostdevice.snmpvalues.LogInFailed = true;
-                this.hostdevice.snmpvalues.LogInFailedAlarmTime = DateTime.Now;
+                //.iso.org.dod.internet.private.enterprises.moxa.industrialRouter.insrouter.swTraps
+
+                string[] parts = oid.Split('.');
+                if (parts.Length < 11)
+                {
+                    return false;
+                }
+
+                ushort value = 0;
+                if (!ushort.TryParse(parts[10], out value)) return false;
+
+                if (!Enum.IsDefined(typeof(swTraps), value)) return false;
+
+                swTraps theTrap = (swTraps)value;
+
+                if (log.IsInfoEnabled)
+                {
+                    log.Info($"{this.hostdevice.IP} received {theTrap} = {trap.Data}");
+                }
+
+                switch (theTrap)
+                {
+                    case swTraps.varconfigChangeTrap:
+                        this.hostdevice.ConfigurationChanged = true;
+                        break;
+                    case swTraps.varpower1Trap:
+                        hostdevice.Power1ok = true;
+                        hostdevice.Power1Failed = true;
+                        break;
+                    case swTraps.varpower2Trap:
+                        hostdevice.Power2ok = true;
+                        hostdevice.Power2Failed = true;
+                        break;
+                    case swTraps.varredundancyTopologyChangedTrap:
+                        break;
+                    case swTraps.varturboRingCouplingPortChangedTrap:
+                        break;
+                    case swTraps.varturboRingMasterChangedTrap:
+                        break;
+                    case swTraps.varVRRPStateChangeTrap:
+                        // 1.3.6.1.4.1.8691.6.100.0.13 = vip:192.168.117.254,vrid: 1,change_to_BACKUP_state
+                        // 1.3.6.1.4.1.8691.6.100.0.13 = vip:192.168.117.254,vrid: 1,change_to_MASTER_state
+                        this.hostdevice.vrrpStatus.Backup = true;
+                        this.hostdevice.vrrpStatus.Master = true;
+                        break;
+                    case swTraps.varFiberWarningTrap:
+                        break;
+                    case swTraps.varVPNConnectedTrap:
+                        this.hostdevice.VPNConnected = true;
+                        this.hostdevice.VPNDisconnected = false;
+                        break;
+                    case swTraps.varVPNDisconnectedTrap:
+                        this.hostdevice.VPNConnected = false;
+                        this.hostdevice.VPNDisconnected = true;
+                        break;
+                    case swTraps.varFirewallPolicyTrap:
+                        this.hostdevice.FireWallPolicy = true;
+                        break;
+                    case swTraps.varFirewallConfigChangeTrap:
+                        this.hostdevice.FireWallConfigChanged = true;
+                        break;
+                    case swTraps.varSecurityNotificationTrap:
+                        break;
+                    case swTraps.varLoggingCapacityTrap:
+                        break;
+                    case swTraps.varFirmwareUpgradeTrap:
+                        break;
+                    case swTraps.varWanInterfaceChange:
+                        this.hostdevice.WANConnected = true;
+                        this.hostdevice.WANDisconnected = true;
+                        break;
+                    case swTraps.varWanInterfacePingFail:
+                        this.hostdevice.WANConnected = false;
+                        this.hostdevice.WANDisconnected = true;
+                        break;
+                    case swTraps.varSerialOpModeStateChange:
+                        break;
+                    default:
+                        break;
+                }
+            }
+            else if (oid.StartsWith("1.3.6.1.4.1.8691.6.100.1.25"))
+            {
+                //.iso.org.dod.internet.private.enterprises.moxa.industrialRouter.insrouter.swMgmt.securityNotification
+                // 1.3.6.1.4.1.8691.6.100.0.13 = vip:192.168.117.254,vrid: 1,change_to_BACKUP_state
+                // 1.3.6.1.4.1.8691.6.100.0.13 = vip:192.168.117.254,vrid: 1,change_to_MASTER_state
+
+                string[] parts = oid.Split('.');
+                if (parts.Length < 11)
+                {
+                    return false;
+                }
+                ushort index = 0;
+                if (!ushort.TryParse(parts[10], out index))
+                {
+                    return false;
+                }
+                ushort value = 0;
+                if (!ushort.TryParse(trap.Data.ToString(), out value))
+                {
+                    return false;
+                }
+
+                switch (index)
+                {
+                    case (ushort)securityNotification.eventFirewall:
+                        break;
+                    case (ushort)securityNotification.eventDoSAttack:
+                        break;
+                    case (ushort)securityNotification.eventAccessViolation:
+                        break;
+                    case (ushort)securityNotification.eventLoginFail:
+                        this.hostdevice.LogInFailed = true;
+                        break;
+                    case (ushort)securityNotification.eventDeviceLockdown:
+                        break;
+                    case (ushort)securityNotification.eventLayer3Filter:
+                        break;
+                    default:
+                        break;
+                }
             }
             else
             {
                 if (log.IsDebugEnabled)
                 {
-                    log.Debug("trap ignored.");
+                    log.Debug($"trap ignored {oid} = {trap.Data.ToString()}");
                 }
             }
         }
         return false;
     }
 
-    public bool ScanVRRPStatus()
+    enum swTraps : ushort
+    {
+        varconfigChangeTrap = 1,
+        varpower1Trap = 2, // 1=none, 2=off, 3=on
+        varpower2Trap = 3,
+        vardi1Trap = 4,
+        vardi2Trap = 5,
+        varredundancyTopologyChangedTrap = 10,
+        varturboRingCouplingPortChangedTrap = 11,
+        varturboRingMasterChangedTrap = 12,
+        varVRRPStateChangeTrap = 13, // octetstr
+        varFiberWarningTrap = 28,
+        varVPNConnectedTrap = 40,
+        varVPNDisconnectedTrap = 41,
+        varFirewallPolicyTrap = 50,
+        varSecurityNotificationTrap = 51, // octetstr
+        varLoggingCapacityTrap = 52,
+        varDot1xAuthFailTrap = 53,
+        varFirmwareUpgradeTrap = 54,
+        varFirewallConfigChangeTrap = 55,
+        varWanInterfaceChange = 74,
+        varWanInterfacePingFail = 75,
+        varSerialOpModeStateChange = 76,
+
+
+    }
+    
+
+    public override bool ProcessTrap(ISnmpPdu pdu)
+    {
+        log.Info($"received {pdu}");
+        if (pdu.ToString().Contains(strLoginFailedRFC3418))
+        {
+            this.hostdevice.LogInFailed = true;
+        }
+        return false;
+    }
+
+    enum securityNotification :ushort
+    {
+        /// <summary>
+        /// Firewall event Setting: Disable=0, Enable=1
+        /// </summary>
+        eventFirewall = 1,
+        /// <summary>
+        /// DoS Attack event Setting: Enable=1, Disable=0
+        /// </summary>
+        eventDoSAttack = 2,
+        /// <summary>
+        /// Access Violation Setting: Enable=1, Disable=0
+        /// </summary>
+        eventAccessViolation = 3,
+        /// <summary>
+        /// Login Fail Setting: Enable = 1, Disable = 0
+        /// </summary>
+        eventLoginFail = 4,
+        //Device Lockdown Setting: Enable = 1, Disable = 0
+        eventDeviceLockdown = 5,
+        /// <summary>
+        /// Layer3 Filter Setting: Enable = 1, Disable = 0
+        /// </summary>
+        eventLayer3Filter = 6
+    }
+
+    List<Variable> myRouterOids = new List<Variable>();
+
+    public bool ScanRouterStatus()
     {
         if (hostdevice == null)
         {
             return false;
         }
-        if ((enterprise != Enterprise.Moxa) && (enterprise != Enterprise.catalistL3Router))
+        if ((enterprise != Enterprise.MoxaEDR) && (enterprise != Enterprise.catalistL3Router))
         {
             return false;
         }
 
-        List<Variable> vList = new List<Variable>();
-        if (!hostdevice.vrrpStatus.IsInitialized())
+        //if (!hostdevice.vrrpStatus.IsInitialized())
+        if (myRouterOids.Count == 0)
         {
-            if (enterprise == Enterprise.Moxa)
+            if (enterprise == Enterprise.MoxaEDR)
             {
-                vList.Add(new Variable(vrrpStatus.moxaFirmwareVersion));
-                vList.Add(new Variable(vrrpStatus.moxaSwitchModel));
-                vList.Add(new Variable(vrrpStatus.moxaVrrpEnable));
-                vList.Add(new Variable(vrrpStatus.moxaVrrpStatus));
+                myRouterOids.Add(new Variable(vrrpStatus.moxaVrrpEnable));
+                myRouterOids.Add(new Variable(vrrpStatus.moxaVrrpStatus));
+                //myRouterOids.Add(new Variable(vrrpStatus.moxaLoginFailStatus));
             }
             else if (enterprise == Enterprise.catalistL3Router)
             {
-                vList.Add(new Variable(vrrpStatus.genericVrrpAdminState));
-                vList.Add(new Variable(vrrpStatus.genericVrrpOperState));
-                vList.Add(new Variable(vrrpStatus.VrrpV3OperationsStatus));
+                myRouterOids.Add(new Variable(vrrpStatus.genericVrrpAdminState));
+                myRouterOids.Add(new Variable(vrrpStatus.genericVrrpOperState));
+                myRouterOids.Add(new Variable(vrrpStatus.VrrpV3OperationsStatus));
             }
-            else
-            {
-                if (enterprise == Enterprise.Moxa)
-                {
-                    vList.Add(new Variable(vrrpStatus.moxaVrrpEnable));
-                    vList.Add(new Variable(vrrpStatus.moxaVrrpStatus));
-                }
-                else if (enterprise == Enterprise.catalistL3Router)
-                {
-                    vList.Add(new Variable(vrrpStatus.genericVrrpAdminState));
-                    vList.Add(new Variable(vrrpStatus.genericVrrpOperState));
-                    vList.Add(new Variable(vrrpStatus.VrrpV3OperationsStatus));
-                }
-            }
-            ISnmpMessage response = null;
-            try
-            {
-                GetBulkRequestMessage msgScanUps = null;
-                if (version == VersionCode.V2)
-                {
-                    msgScanUps = new GetBulkRequestMessage(Messenger.NextMessageId, VersionCode.V2, hostdevice.snmpvalues.CommunityString, vList.Count, 1, vList);
-                }
-                else if (version == VersionCode.V3)
-                {
-                    ReportMessage report = null;
-                    report = snmpV3User.GetDiscoveryResponseMessage(SnmpType.GetRequestPdu);
-                    msgScanUps = new GetBulkRequestMessage(VersionCode.V3, Messenger.NextMessageId, Messenger.NextRequestId, snmpV3User.username, snmpV3User.ContextName, vList.Count, 1, vList, snmpV3User.privacy, Messenger.MaxMessageSize, report);
-                }
-                response = msgScanUps.GetResponse(configuration.snmpTimeOutMs, myIpEndpoint);
-            }
-            catch (Lextm.SharpSnmpLib.Messaging.TimeoutException)
-            {
-                return false;
-            }
-            catch (Exception ex)
-            {
-                if (log.IsInfoEnabled)
-                {
-                    log.Info("Error occurred while scanning VRRP status: " + ex.Message);
-                }
-            }
-            int errorStatus = response.Pdu().ErrorStatus.ToInt32();
-            if (errorStatus != 0)
-            {
-                log.Error($"{nameof(ScanVRRPStatus)} GetResponse {Enum.GetName(typeof(Lextm.SharpSnmpLib.ErrorCode), errorStatus)}");
-                return false;
-            }
-            if (log.IsDebugEnabled) log.Debug($"{nameof(ScanVRRPStatus)} received {response.Pdu().Variables.Count} Variables");
-            foreach (Variable v in response.Pdu().Variables)
-            {
-                ProcessVrrpStatus(v);
-            }
-            return true;
         }
-        return false;
-    }
 
+        ISnmpMessage response = null;
+        try
+        {
+            GetBulkRequestMessage msgScanUps = null;
+            if (version == VersionCode.V2)
+            {
+                msgScanUps = new GetBulkRequestMessage(Messenger.NextMessageId, VersionCode.V2, hostdevice.snmpvalues.CommunityString, myRouterOids.Count, 1, myRouterOids);
+            }
+            else if (version == VersionCode.V3)
+            {
+                ReportMessage report = null;
+                report = snmpV3User.GetDiscoveryResponseMessage(SnmpType.GetRequestPdu);
+                msgScanUps = new GetBulkRequestMessage(VersionCode.V3, Messenger.NextMessageId, Messenger.NextRequestId, snmpV3User.username, snmpV3User.ContextName, myRouterOids.Count, 1, myRouterOids, snmpV3User.privacy, Messenger.MaxMessageSize, report);
+            }
+            response = msgScanUps.GetResponse(configuration.snmpTimeOutMs, myIpEndpoint);
+        }
+        catch (Lextm.SharpSnmpLib.Messaging.TimeoutException)
+        {
+            return false;
+        }
+        catch (Exception ex)
+        {
+            if (log.IsInfoEnabled)
+            {
+                log.Info("Error occurred while scanning VRRP status: " + ex.Message);
+            }
+        }
+        int errorStatus = response.Pdu().ErrorStatus.ToInt32();
+        if (errorStatus != 0)
+        {
+            log.Error($"ScanRouterStatus GetResponse {Enum.GetName(typeof(Lextm.SharpSnmpLib.ErrorCode), errorStatus)}");
+            return false;
+        }
+
+        if (log.IsDebugEnabled) log.Debug($"ScanRouterStatus received {response.Pdu().Variables.Count} Variables");
+        foreach (Variable v in response.Pdu().Variables)
+        {
+            ProcessRouterStatus(v);
+        }
+        return true;
+
+    }
 
     public bool GetVrrpBulkStatus()
     {
@@ -768,36 +936,30 @@ public class aSwitch : aDevice
         if (result == null)
         {
             if (log.IsDebugEnabled)
-                log.Debug($"{ToString()} {nameof(GetVrrpBulkStatus)} no result returned");
+                log.Debug($"{ToString()} GetVrrpBulkStatus no result returned");
             return false;
         }
         if (result.Count == 0)
         {
             if (log.IsDebugEnabled)
-                log.Debug($"{ToString()} {nameof(GetVrrpBulkStatus)} no values available");
+                log.Debug($"{ToString()} GetVrrpBulkStatus no values available");
             return false;
         }
         if (log.IsDebugEnabled)
-            log.Debug($"{ToString()} {nameof(GetVrrpBulkStatus)} returned {result.Count} values");
+            log.Debug($"{ToString()} GetVrrpBulkStatus returned {result.Count} values");
 
         foreach (Variable v in result)
         {
-            ProcessVrrpStatus(v);
+            ProcessRouterStatus(v);
         }
         return true;
     }
 
-    private void ProcessVrrpStatus(Variable v)
+    private void ProcessRouterStatus(Variable v)
     {
         if (log.IsDebugEnabled)
         {
-            log.Debug($"{ToString()} {v.Id?.ToString()} {(object)v.Data}");
-        }
-        if (!v.Id.ToString().StartsWith("1.3.6.1.4.1.8691.6.100.1.16.1.1.1"))
-        {
-            hostdevice.vrrpStatus.NotAvailable = true;
-            //log.Info($"{hostdevice} VRRP Status not available");
-            return;
+            log.Debug($"{ToString()} ProcessRouterStatus( {v.Id?.ToString()} {(object)v.Data})");
         }
 
         if (v.Id.ToString().StartsWith(vrrpStatus.moxaFirmwareVersion.ToString()))
@@ -843,7 +1005,7 @@ public class aSwitch : aDevice
                 }
             }
         }
-        else if ((v.Id == vrrpStatus.moxaVrrpStatus) ||
+        else if ((v.Id.ToString().StartsWith(vrrpStatus.moxaVrrpStatus.ToString())) ||
             (v.Id == vrrpStatus.VrrpV3OperationsStatus) ||
             (v.Id == vrrpStatus.genericVrrpOperState))
         {
@@ -863,13 +1025,13 @@ public class aSwitch : aDevice
                 UInt32 iStatus = 0;
                 if (!(UInt32.TryParse(v.Data.ToString(), out iStatus)))
                 {
-                    log.Error($"{ToString()} {nameof(ProcessVrrpStatus)}: {v.Id} = {v.Data.ToString()}");
+                    log.Error($"{ToString()} {nameof(ProcessRouterStatus)}: {v.Id} = {v.Data.ToString()}");
                 }
                 else
                 {
                     if (log.IsDebugEnabled)
                     {
-                        log.Debug($"{ToString()} {nameof(ProcessVrrpStatus)}: VRRP Status = {iStatus}");
+                        log.Debug($"{ToString()} {nameof(ProcessRouterStatus)}: VRRP Status = {iStatus}");
                     }
                     // 0=init, 1=backup, 2=master
                     switch (iStatus)
@@ -910,9 +1072,53 @@ public class aSwitch : aDevice
                 }
             }
         }
+        else if (v.Id.ToString().StartsWith(vrrpStatus.moxaLoginFailStatus.ToString()))
+        {
+            // not polled anymore. because it is always 0. we count on the trap
+            uint status = 0;
+            uint.TryParse(v.Data.ToString(), out status);
+            if (status == 0)
+            {
+                //safe
+                if (hostdevice.LogInFailed)
+                {
+                    log.Info($"Safe. (LogInFailed cleared)");
+                }
+                this.hostdevice.LogInFailed = false;
+            }
+            else if (status == 1)
+            {
+                //attacked
+                if (!hostdevice.LogInFailed)
+                {
+                    this.hostdevice.LogInFailed = true;
+                    log.Info($"Attacked. (LogInFailed)");
+                }
+            }
+            //log.Info($"{ToString()} Login Fail Status = {v.Data.ToString()}");
+        }
         else
         {
-            //log.Error($"{ToString()} {nameof(ProcessVrrpStatus)} {v.Id} = {v.Data.ToString()}");
+            log.Error($"{ToString()} ProcessRouterStatus() ignored {v.Id} = {v.Data.ToString()}");
         }
+    }
+    
+    public enum moxaRouterGlobalStatus: ushort
+    {
+        //.1.3.6.1.4.1.8691.6.100.1.23.*
+        //.iso.org.dod.internet.private.enterprises.moxa.industrialRouter.insrouter.swMgmt.globalStatus
+        firewallGlobalStatus = 1,
+        natGlobalStatus = 2,
+        vpnGlobalStatus = 3,
+        securityNotificationFirewallStatus = 4,
+        securityNotificationDoSAttackStatus = 5,
+        securityNotificationAccessViolationStatus = 6,
+        /// <summary>
+        /// LoginFailStatus: Safe = 0, Attacked = 1
+        /// </summary>
+        securityNotificationLoginFailStatus = 7,
+        defaultPasswordChange = 8,
+        securityNotificationDeviceLockdownStatus = 9,
+        securityNotificationLayer3FilterStatus = 10
     }
 }
