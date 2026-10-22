@@ -263,9 +263,11 @@ internal static class TagConnections
             if (device.VPNDisconnected) alarmTagValue |= 0x40;
             if (device.FireWallConfigChanged) alarmTagValue |= 0x80;
             if (device.FireWallPolicy) alarmTagValue |= 0x100;
-            if (device.vrrpStatus.Master) alarmTagValue |= 0x200;
-            if (device.vrrpStatus.Backup) alarmTagValue |= 0x400;
-
+            if (device.vrrpStatus.Enabled) Value |= 0x10000000;
+            if (device.vrrpStatus.Disabled) Value |= 0x20000000;
+            if (device.vrrpStatus.Master) Value |= 0x40000000;
+            if (device.vrrpStatus.Backup) Value |= 0x80000000;
+            
             if (device.tagvalues.AlarmTagValue != alarmTagValue || RequestWriteAllTags)
             {
                 tags.Add(new KeyValuePair<string, object>(device.tagvalues.TagName + ".ALARMS", alarmTagValue));
