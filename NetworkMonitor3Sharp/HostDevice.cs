@@ -3,9 +3,11 @@ using log4net;
 using NetworkMonitor.Properties;
 using NetworkMonitor.snmp;
 using System;
+using System.Data;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Reflection;
+using System.Security;
 using System.Text;
 using System.Web.Configuration;
 
@@ -104,8 +106,20 @@ public class HostDevice
         #region tag: ALARMS
         public bool AlarmTagExist = true;
 
-        public uint AlarmTagValue = 0;
+        public uint AlarmTagValue
+        {
+            get { return mAlarmTagValue; }
+            set
+            {
+                if (mAlarmTagValue == value) return;
+                mAlarmTagValue = value;
+                LastchangeAlarmTag = DateTime.Now;
+            }
+        }
+        public DateTime LastchangeAlarmTag = DateTime.MinValue;
 
+
+        private uint mAlarmTagValue = 0;
         public bool AlarmTagUpdateRequested = false;
         #endregion
 
@@ -150,8 +164,23 @@ public class HostDevice
 
     #region need latch for 1 minute
     
-    public DateTime ResetTime = DateTime.MinValue;
-    private object ResetTimeLock;
+    public DateTime ResetTime
+    {
+        get { return mResetTime; }
+        set
+        {
+            if (mResetTime == value) return;
+
+            mResetTime = value;
+            if (log.IsInfoEnabled)
+            {
+                log.Debug($"{this.host.HostName} ResetTime = {ResetTime}");
+            }
+        }
+    }
+    private DateTime mResetTime = DateTime.MinValue;
+    private readonly object ResetTimeLock = new object();
+
     public bool ResetOldLatchedStates()
     {
         if (ResetTime == DateTime.MinValue) return false;
@@ -162,7 +191,7 @@ public class HostDevice
         SecurityNotification = false;
         FireWallConfigChanged = false;
         FireWallPolicy = false;
-
+        if (log.IsInfoEnabled) log.Debug($"{this.host.HostName} ResetOldLatchedStates()");
         lock (ResetTimeLock)
         {
             ResetTime = DateTime.MinValue;
@@ -176,8 +205,12 @@ public class HostDevice
         {   if (mLogInFailed == value) return;
             mLogInFailed = value;
             if (value)
-                lock(ResetTimeLock)
+            {
+                lock (ResetTimeLock)
+                {
                     ResetTime = DateTime.Now.AddMinutes(1);
+                }
+            }
         }
     }
     public bool ConfigurationChanged

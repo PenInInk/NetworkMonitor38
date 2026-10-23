@@ -84,6 +84,7 @@ internal static class TagConnections
         List<KeyValuePair<string, object>> TagUpdates = new List<KeyValuePair<string, object>>();
         for (int d = 0; d < configuration.deviceList.Length; d++)
         {
+            //configuration.deviceList[d].tagvalues.ResetLastChangeAlarmTag();
             GetChangedTags(ref configuration.deviceList[d], ref TagUpdates);
         }
         if (log.IsDebugEnabled && TagUpdates.Count > 0)
@@ -95,6 +96,7 @@ internal static class TagConnections
 
     public static List<KeyValuePair<string, object>> GetChangedTags(ref HostDevice Device)
     {
+        //Device.tagvalues.ResetLastChangeAlarmTag();
         List<KeyValuePair<string, object>> tags = new List<KeyValuePair<string, object>>();
         GetChangedTags(ref Device, ref tags);
         return tags;
@@ -183,7 +185,7 @@ internal static class TagConnections
                 if (device.Power1Failed) Value |= 0x04000000;
                 if (device.Power1Failed) Value |= 0x08000000;
 
-                // Moxa VRRP
+                // VRRP
                 if (device.vrrpStatus.Available)
                 {
                     if (device.vrrpStatus.Enabled) Value |= 0x10000000;
@@ -258,15 +260,17 @@ internal static class TagConnections
             if (device.SecurityNotification) alarmTagValue |= 2;
             if (device.ConfigurationChanged) alarmTagValue |= 4;
             if (device.WANConnected) alarmTagValue |= 8;
+
             if (device.WANDisconnected) alarmTagValue |= 0x10;
             if (device.VPNConnected) alarmTagValue |= 0x20;
             if (device.VPNDisconnected) alarmTagValue |= 0x40;
             if (device.FireWallConfigChanged) alarmTagValue |= 0x80;
+
             if (device.FireWallPolicy) alarmTagValue |= 0x100;
-            if (device.vrrpStatus.Enabled) Value |= 0x10000000;
-            if (device.vrrpStatus.Disabled) Value |= 0x20000000;
-            if (device.vrrpStatus.Master) Value |= 0x40000000;
-            if (device.vrrpStatus.Backup) Value |= 0x80000000;
+            if (device.vrrpStatus.Enabled) alarmTagValue |= 0x10000000;
+            if (device.vrrpStatus.Disabled) alarmTagValue |= 0x20000000;
+            if (device.vrrpStatus.Master) alarmTagValue |= 0x40000000;
+            if (device.vrrpStatus.Backup) alarmTagValue |= 0x80000000;
             
             if (device.tagvalues.AlarmTagValue != alarmTagValue || RequestWriteAllTags)
             {
@@ -281,6 +285,7 @@ internal static class TagConnections
                 log.Info("GetTags(" + device.tagvalues.TagName + ",  " + Area + ") - " + ex.Message);
             }
         }
+
     }
 
     public static void UpdatePortTags(ref HostDevice device)

@@ -270,7 +270,20 @@ public class GUI : Form
     {
         if (!Program.RequestShutdown)
         {
-            TagConnection.Write(TagConnection.GetChangedTags());
+            List<KeyValuePair<string, object>> changedTags = TagConnection.GetChangedTags();
+            TagConnection.Write(changedTags);
+            if (log.IsDebugEnabled)
+            {
+                uint value;
+                foreach (KeyValuePair<string, object> tag in changedTags)
+                {
+                    if (tag.Value != null)
+                    {
+                        value = Convert.ToUInt32(tag.Value);
+                        log.Info($"{tag.Key} = 0x{value.ToString("X8")}");
+                    }
+                }
+            }
         }
     }
 

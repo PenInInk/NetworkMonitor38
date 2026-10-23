@@ -3,15 +3,12 @@ using Lextm.SharpSnmpLib.Messaging;
 using Lextm.SharpSnmpLib.Security;
 using log4net;
 using NetworkAdapters;
-using NetworkMonitor;
-using SnmpSharpNet;
+//using SnmpSharpNet;
 using System;
-using System.Linq.Expressions;
 using System.Net;
 using System.Net.Sockets;
-using System.Security.Cryptography;
 using System.Threading.Tasks;
-
+using static NetworkMonitor.snmp.aDevice;
 
 namespace NetworkMonitor
 {
@@ -28,7 +25,11 @@ namespace NetworkMonitor
 
         private static void Run()
         {
-            log.Info("Trap Receiver Start.");
+            if (log.IsDebugEnabled)
+                log.Debug("Trap Receiver Start. All received trap messages will be logged!");
+            else
+                log.Info("Trap Receiver Start.");
+
             // Default SNMP trap listening port (162 requires admin rights, so use >1024 for testing)
             //int port = 1620;
 
@@ -59,30 +60,31 @@ namespace NetworkMonitor
                         // Parse SNMP message
                         //ISnmpMessage message = MessageFactory.ParseMessages(buffer, 0, buffer.Length, new UserRegistry())[0];
                         var message = MessageFactory.ParseMessages(buffer, 0, buffer.Length, new UserRegistry())[0];
-                        VersionCode version = message.Version;
-                        Header header = message.Header;
-                        SecurityParameters parameters = message.Parameters;
+                        if (message == null) continue;
+
+                        //VersionCode version = message.Version;
+ 
+                        if (message.Parameters != null)
+                        {
+                            //SecurityParameters parameters = message.Parameters;
+                        }
                         HostDevice device = configuration.GetDevice(RemoteIpAddress);
-                        
-                        // Print variable bindings
+                        if (device == null) continue;
+
                         bool changedetected = false;
                         if (log.IsDebugEnabled) log.Debug($"{message.Pdu().ToString()}");
                         
                         if (message.Pdu().Variables.Count == 0)
                         {
-                            ISnmpPdu pdu = message.Pdu();
-                            device.data.ProcessTrap(pdu);
+                            RFC2576GenericTrap gt = GetGenericTrap(message.Pdu());
+                            changedetected = device.data.ProcessTrap(gt);
                         }
                         foreach (var variable in message.Pdu().Variables)
                         {
-                            if (device != null)
-                            {
                             if (device.data.ProcessTrap(variable))
                             {
                                 changedetected = true;
                             }
-                            }
-
                             if (GUI.IsGuiVisible)
                             {
                                 GUI.AddMsgToListView(RemoteIpAddress.ToString(), variable.Id.ToString(), variable.Data.ToString());
@@ -92,6 +94,7 @@ namespace NetworkMonitor
                                 log.Debug($"Trap received from {RemoteIpAddress}: {variable.Id} = {variable.Data}");
                             }
                         }
+
                         if (changedetected)
                         {
                             GUI.TagConnection.UpdatePortTags(ref device);
@@ -104,25 +107,19 @@ namespace NetworkMonitor
                     catch (SocketException se)
                     {
                         log.Error(se.Message);
-                        //log.Error(ex.InnerException);
                         GUI.AddMsgToListView("", "Trap receiver", se.Message);
                     }
                     catch (ObjectDisposedException od)
                     {
                         log.Error(od.Message);
-                        //log.Error(ex.InnerException);
                         GUI.AddMsgToListView("", "Trap receiver", od.Message);
                     }
                     catch (Exception ex)
                     {
                         log.Error(ex.Message);
-                        //log.Error(ex.InnerException);
-                        //GUI.AddMsgToListView("", "Trap receiver", ex.Message);
-                        //GUI.AddMsgToListView("", "Trap receiver", ex.InnerException.Message);
+
                     }
-                    //log.Info("Trap Receiver Terminated");
                 }
-                log.Info("Trap Receiver Terminated");
             }
             log.Info("Trap Receiver Terminated");
         }
@@ -134,6 +131,29 @@ namespace NetworkMonitor
                 listener.Close();
             }
             catch { }
+        }
+
+        private static RFC2576GenericTrap GetGenericTrap(ISnmpPdu pdu)
+        {
+            RFC2576GenericTrap genericTrap = RFC2576GenericTrap.unknown;
+
+            if (pdu is TrapV2Pdu)
+            {
+                TrapV2Pdu trapv2 = (TrapV2Pdu)pdu;
+                if (RFC2576GenericTraps.ContainsKey(trapv2.Enterprise))
+                {
+                    return RFC2576GenericTraps[trapv2.Enterprise];
+                }
+            }
+            else if (pdu is TrapV1Pdu)
+            {
+                TrapV1Pdu trap1 = (TrapV1Pdu)pdu;
+                if (!RFC2576GenericTraps.ContainsKey(trap1.Enterprise))
+                {
+                    return RFC2576GenericTraps[(trap1.Enterprise)]; 
+                }
+            }
+            return RFC2576GenericTrap.unknown;
         }
     }
 }

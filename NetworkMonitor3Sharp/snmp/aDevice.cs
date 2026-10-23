@@ -1,6 +1,7 @@
 using Lextm.SharpSnmpLib;
 using Lextm.SharpSnmpLib.Messaging;
 using log4net;
+//using SnmpSharpNet;
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -38,9 +39,31 @@ public class aDevice
     public static string sysUpTime = "1.3.6.1.2.1.1.3";
     public static string snmpTrapOID = "1.3.6.1.6.3.1.1.4.1";
     public static string apcTestTrap = "1.3.6.1.4.1.318.0.636";
-    //{iso(1) identified-organization(3) dod(6) internet(1) snmpV2(6) snmpModules(3) snmpMIB(1) snmpMIBObjects(1) snmpTraps(5) authenticationFailure(5)}
-    public static string strLoginFailedRFC3418 = "1.3.6.1.6.3.1.1.5.5";
 
+    #region GenericTraps
+    public enum RFC2576GenericTrap
+    {
+        unknown = 0,
+        coldStart = 1,
+        warmStart = 2,
+        linkDown=3,
+        linkUp = 4,
+        authenticationFailure = 5,
+        egpNeighborLoss = 6
+    }
+    //{iso(1) identified-organization(3) dod(6) internet(1) snmpV2(6) snmpModules(3) snmpMIB(1) snmpMIBObjects(1) snmpTraps(5) authenticationFailure(5)}
+    public static Dictionary<ObjectIdentifier, RFC2576GenericTrap> RFC2576GenericTraps = new Dictionary<ObjectIdentifier, RFC2576GenericTrap>
+    {
+        {new ObjectIdentifier("1.3.6.1.6.3.1.1.5.1"),RFC2576GenericTrap.coldStart },
+        {new ObjectIdentifier("1.3.6.1.6.3.1.1.5.2"),RFC2576GenericTrap.warmStart },
+        {new ObjectIdentifier("1.3.6.1.6.3.1.1.5.3"),RFC2576GenericTrap.linkDown },
+        {new ObjectIdentifier("1.3.6.1.6.3.1.1.5.4"),RFC2576GenericTrap.linkUp },
+        {new ObjectIdentifier("1.3.6.1.6.3.1.1.5.5"),RFC2576GenericTrap.authenticationFailure },
+        {new ObjectIdentifier("1.3.6.1.6.3.1.1.5.6") , RFC2576GenericTrap.egpNeighborLoss }
+    };
+
+
+    #endregion
 
     private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
@@ -255,7 +278,7 @@ public class aDevice
         return false;
     }
 
-    public virtual bool ProcessTrap(ISnmpPdu pdu)
+    public virtual bool ProcessTrap(RFC2576GenericTrap gt)
     {
         return false;
     }

@@ -1,4 +1,4 @@
-using Lextm.SharpSnmpLib;
+    using Lextm.SharpSnmpLib;
 using Lextm.SharpSnmpLib.Messaging;
 using log4net;
 using log4net.Core;
@@ -271,6 +271,8 @@ public class aSwitch : aDevice
             log.Debug($"{this} {nameof(getPortOperStatus)}");
         }
         myPortOperStatusses.Clear();
+        try
+        {
         if (version == VersionCode.V3)
         {
             ReportMessage response = snmpV3User.GetDiscoveryResponseMessage(SnmpType.GetBulkRequestPdu);
@@ -279,6 +281,16 @@ public class aSwitch : aDevice
         else
         {
             Messenger.Walk(VersionCode.V2, myIpEndpoint, CommunityString, oidPortOperStatus, myPortOperStatusses, configuration.snmpTimeOutMs, WalkMode.WithinSubtree);
+        }
+        }
+        catch (Lextm.SharpSnmpLib.Messaging.TimeoutException)
+        {
+            return false;
+        }
+        catch (Exception ex)
+        {
+            log.Error($"{ToString()} {ex.Message}");
+            return false;
         }
         return handlePortStatus(myPortOperStatusses, typeof(ifOperStatus));
     }
@@ -292,7 +304,8 @@ public class aSwitch : aDevice
         }
 
         myPortAdminStatusses.Clear();
-
+        try
+        {
         if (version == VersionCode.V3)
         {
             ReportMessage response = snmpV3User.GetDiscoveryResponseMessage(SnmpType.GetBulkRequestPdu);
@@ -302,51 +315,53 @@ public class aSwitch : aDevice
         {
             Messenger.Walk(VersionCode.V2, myIpEndpoint, CommunityString, oidPortAdminStatus, myPortAdminStatusses, configuration.snmpTimeOutMs, WalkMode.WithinSubtree);
         }
+        }
+        catch (Lextm.SharpSnmpLib.Messaging.TimeoutException)
+        {
+            return false;
+        }
+        catch (Exception ex)
+        {
+            log.Error($"{ToString()} {ex.Message}");
+            return false;
+        }
         return handlePortStatus(myPortAdminStatusses, typeof(ifAdminStatus));
 
     }
 
     public bool handlePortStatus(IList<Variable> received, Type portStatusType)
     {
-        lstPortStatus.Clear();
-        try
+        foreach (Variable item in received)
         {
-            foreach (Variable item in received)
-            {
-                //if (log.IsDebugEnabled) log.Debug($"{this}: {nameof(handlePortStatus)}: oid={item.Id}, data={item.Data}");
-                ifStatus aPortStatus = null;
-                aPortStatus = new ifStatus(item, enterprise);
-                if (log.IsDebugEnabled) log.Debug($"{this}: {nameof(handlePortStatus)}: {aPortStatus}");
-                if (aPortStatus.portNr <= 28 && aPortStatus.portNr > 0)
-                {
-                    lstPortStatus.Add(aPortStatus);
-                }
-            }
+            handlePortStatus(item, portStatusType);
         }
-        catch (Exception ex)
+        return true;
+    }
+
+    public bool handlePortStatus(Variable item, Type portStatusType)
+    {
+        ifStatus aPortStatus = null;
+        aPortStatus = new ifStatus(item, enterprise);
+        //if (log.IsDebugEnabled) log.Debug($"{this}: {nameof(handlePortStatus)}: {aPortStatus}");
+        if (aPortStatus.portNr <= 28 && aPortStatus.portNr > 0)
         {
-            log.Error(hostdevice.host.IP + " handlePortStatus " + ex.Message);
-            return false;
-        }
-        foreach (ifStatus physicalPort in lstPortStatus)
-        {
-            if (physicalPort.portStatus != 0)
+            if (aPortStatus.portStatus != 0)
             {
                 //if (log.IsDebugEnabled) log.Debug($"{this}: {nameof(handlePortStatus)}: {physicalPort}");
 
                 if (portStatusType == typeof(ifOperStatus))
                 {
-                    hostdevice.Ports[physicalPort.portNr - 1].OperStatus = (long)physicalPort.portStatus;
+                    hostdevice.Ports[aPortStatus.portNr - 1].OperStatus = (long)aPortStatus.portStatus;
                 }
                 if (portStatusType == typeof(ifAdminStatus))
                 {
-                    hostdevice.Ports[physicalPort.portNr - 1].ifAdminStatus = (long)physicalPort.portStatus;
+                    hostdevice.Ports[aPortStatus.portNr - 1].ifAdminStatus = (long)aPortStatus.portStatus;
                 }
             }
         }
-        return true;
-    }
 
+        return false;
+    }
     public void ProcessRingStatus(Variable v)
     {
         if (v.Data.TypeCode == SnmpType.NoSuchInstance)
@@ -504,7 +519,7 @@ public class aSwitch : aDevice
             else if (oid.StartsWith("interfaces.ifTable.ifEntry.ifIndex.") || oid.StartsWith("1.3.6.1.2.1.2.2.1.1"))
             {
                 //.iso.org.dod.internet.mgmt.mib-2.interfaces.ifTable.ifEntry.ifIndex
-
+                handlePortStatus(trap, typeof(ifOperStatus));
             }
             else if (oid.IndexOf("1.3.6.1.4.1.4329.20.1.1.1.1.28.3.0") >= 0)
             {
@@ -731,6 +746,7 @@ public class aSwitch : aDevice
                     default:
                         break;
                 }
+                return true;
             }
             else if (oid.StartsWith("1.3.6.1.4.1.8691.6.100.1.25"))
             {
@@ -812,13 +828,27 @@ public class aSwitch : aDevice
     }
     
 
-    public override bool ProcessTrap(ISnmpPdu pdu)
+    public override bool ProcessTrap(RFC2576GenericTrap genericTrap)
     {
-        log.Info($"received {pdu}");
-        if (pdu.ToString().Contains(strLoginFailedRFC3418))
+        switch (genericTrap)
         {
-            this.hostdevice.LogInFailed = true;
+            case RFC2576GenericTrap.coldStart:
+                break;
+            case RFC2576GenericTrap.warmStart:
+                break;
+            case RFC2576GenericTrap.linkUp:
+                break;
+            case RFC2576GenericTrap.linkDown:
+                break;
+            case RFC2576GenericTrap.authenticationFailure:
+                this.hostdevice.LogInFailed = true;
+                return true;
+
+            case RFC2576GenericTrap.egpNeighborLoss:
+                break;
         }
+
+
         return false;
     }
 
@@ -866,9 +896,12 @@ public class aSwitch : aDevice
         {
             if (enterprise == Enterprise.MoxaEDR)
             {
-                myRouterOids.Add(new Variable(vrrpStatus.moxaVrrpEnable));
-                myRouterOids.Add(new Variable(vrrpStatus.moxaVrrpStatus));
+                //myRouterOids.Add(new Variable(vrrpStatus.moxaVrrpEnable)); // always reads 1 = backup. Don't use
+                //myRouterOids.Add(new Variable(vrrpStatus.moxaVrrpStatus));
                 //myRouterOids.Add(new Variable(vrrpStatus.moxaLoginFailStatus));
+                myRouterOids.Add(new Variable(vrrpStatus.genericVrrpOperState));
+                myRouterOids.Add(new Variable(vrrpStatus.genericVrrpAdminState));
+
             }
             else if (enterprise == Enterprise.catalistL3Router)
             {
